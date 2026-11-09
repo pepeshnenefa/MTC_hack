@@ -26,7 +26,7 @@ class Tests(unittest.TestCase):
     with (d/'questions.csv').open('w',encoding='utf-8-sig',newline='') as f:
      w=csv.writer(f);w.writerow(['id','question']);w.writerows([['001','Панели?'],['x,2','Пользователь: вопрос\nПользователь: фасад?']])
     with zipfile.ZipFile(d/'kb.zip','w') as z:z.writestr('a.md','# Панели\nМонтаж на фасаде.')
-    env=dict(os.environ,DATA_DIR=str(d),LLM_BASE_URL='http://127.0.0.1:'+str(server.server_port),LLM_API_KEY='test-only',LLM_MODEL='test-model',USE_RERANKER='0')
+    env=dict(os.environ,DATA_DIR=str(d),LLM_BASE_URL='http://127.0.0.1:'+str(server.server_port),LLM_API_KEY='test-only',LLM_MODEL='test-model',USE_RERANKER='0',USE_HYBRID='0')
     subprocess.run([sys.executable,str(ROOT/'submission/solution.py')],cwd=d,env=env,check=True,capture_output=True)
     with (d/'submission.csv').open(encoding='utf-8',newline='') as f:rows=list(csv.DictReader(f))
     self.assertEqual([r['id'] for r in rows],['001','x,2']);self.assertEqual(rows[0]['answer'],'Ответ, с "кавычками" и переносом')
