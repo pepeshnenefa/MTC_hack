@@ -1,0 +1,13 @@
+{
+  "archive": "energytool-hierarchy-v1.zip",
+  "sha256": "ff19f7a594a1fc689bfda6c73c5d3c6978bb38c388cf2e04826fadcada7fefa2",
+  "files": {
+    "solution.py": "c6afc82d4a99c27e4d457846d092c050caa5b97657905221b8422e57620fe44a",
+    "batch_io.py": "8a9d6e3445a51f29380dd011484834a871da1f45aa9863ac98260f29d58c324b",
+    "retrieval.py": "ef15184a4309ecc5308570925a8df0af25c516a55c153fff79a55ac3af93f068",
+    "context.py": "41090608319f8d309e7bbdd642ea857c1cd04eee68893bb1640c33f27f83a745",
+    "hybrid.py": "0a3d926b1f78f8af0dd1d7bbf950a7ce782d3100b95338ec4c9822d31fb82f0e",
+    "hierarchy.py": "cef54c0b3950a743e00522478ba701f1341841920b788780fe3cfa17de68fbf6",
+    "requirements.txt": "2586b65c6f034fab2206dbd1dc7982cb67592c268a3b6d54c9ec5607e345b37b"
+  }
+}

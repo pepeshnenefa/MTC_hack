@@ -1,0 +1,12 @@
+{
+  "archive": "energytool-anchored-v1.zip",
+  "sha256": "215ad27a33567fbe1af23bba9ea49c6ae61b7b1fcfb4d71685b696802fc43f3c",
+  "files": {
+    "solution.py": "25f5f1f0fd51839896e7ec46bfa0e1910c56278aabfb210427efc6fe223460c4",
+    "batch_io.py": "8a9d6e3445a51f29380dd011484834a871da1f45aa9863ac98260f29d58c324b",
+    "retrieval.py": "ef15184a4309ecc5308570925a8df0af25c516a55c153fff79a55ac3af93f068",
+    "context.py": "41090608319f8d309e7bbdd642ea857c1cd04eee68893bb1640c33f27f83a745",
+    "hybrid.py": "0a3d926b1f78f8af0dd1d7bbf950a7ce782d3100b95338ec4c9822d31fb82f0e",
+    "requirements.txt": "2586b65c6f034fab2206dbd1dc7982cb67592c268a3b6d54c9ec5607e345b37b"
+  }
+}

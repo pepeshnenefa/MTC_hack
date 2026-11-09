@@ -13,7 +13,6 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
-dist/
 work/
 data/
 submission.csv
