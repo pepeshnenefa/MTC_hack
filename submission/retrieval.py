@@ -155,16 +155,9 @@ class Search:
             if active & self.topics[i] and self.items[i]['source'].endswith('02-product-scope-and-limits.md'):
                 score += 0.9
             scores.append((score,i))
-        # Avoid flooding the prompt with near-duplicate sections from a single
-        # product file when several documents provide complementary evidence.
-        ordered = sorted(scores,key=lambda x:(-x[0],x[1]))
-        selected, per_source = [], Counter()
-        per_file_limit = max(4, (2*k+2)//3) if k >= 8 else k
-        for score, index in ordered:
-            if score<=0:break
-            source=self.items[index]['source']
-            if per_source[source]>=per_file_limit:continue
-            selected.append(dict(self.items[index],score=round(score,4)))
-            per_source[source]+=1
-            if len(selected)==k:break
-        return selected
+        # File boundaries are not duplicates; retain distinct sections of one file.
+        # Import lazily to avoid a cycle with context's language helpers.
+        from context import deduplicate
+        ordered=sorted(scores,key=lambda x:(-x[0],x[1]))
+        candidates=[dict(self.items[i],score=round(score,4)) for score,i in ordered if score>0]
+        return deduplicate(candidates)[:k]

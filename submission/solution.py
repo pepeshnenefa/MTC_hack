@@ -17,6 +17,9 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
 from retrieval import tokens, query, chunks, Search
+from context import pack_context
+from hybrid import prepare as prepare_hybrid
+from hierarchy import HierarchicalSearch
 
 def documents(path):
     path=Path(path)
@@ -81,22 +84,48 @@ class API:
     def answer(self,question,sources):
         if env('USE_RERANKER',default='0')=='1' and sources:
             try:
-                data=self.post('/rerank',{'model':self.reranker,'query':query(question),'documents':[s['heading']+'\n'+s['text'] for s in sources],'top_n':min(self.reranker_top_n,len(sources))})
+                data=self.post('/rerank',{'model':self.reranker,'query':query(question),'documents':[s.get('title',s['heading'])+'\n'+s['text'] for s in sources],'top_n':min(self.reranker_top_n,len(sources))})
                 indices=[int(x['index']) for x in data.get('results',data.get('data',[]))]
                 selected=[sources[i] for i in dict.fromkeys(indices) if 0<=i<len(sources)]
                 if selected:sources=selected
             except Exception as exc:print('Reranker unavailable: '+type(exc).__name__,file=sys.stderr)
-        context=[];used=0
-        for s in sources:
-            entry=s['source']+' / '+s.get('title',s['heading'])+'\n'+s['text']
-            if used+len(entry)>40000:continue
-            context.append(entry);used+=len(entry)
-        payload={'model':self.model,'temperature':self.temperature,'max_tokens':self.max_tokens,'messages':[{'role':'system','content':SYSTEM},{'role':'user','content':'ДОКУМЕНТЫ:\n'+'\n\n'.join(context)+'\n\nДИАЛОГ ИЛИ ВОПРОС:\n'+question}]}
+        context,report=pack_context(question,sources,limit=setting('TOP_K',12,1,100))
+        if report['dropped']:
+            print(json.dumps({'event':'context_budget','dropped':len(report['dropped']),
+                              'included':len(report['included'])}),file=sys.stderr)
+        payload={'model':self.model,'temperature':self.temperature,'max_tokens':self.max_tokens,'messages':[{'role':'system','content':SYSTEM},{'role':'user','content':'ДОКУМЕНТЫ:\n'+context+'\n\nДИАЛОГ ИЛИ ВОПРОС:\n'+question}]}
+        def extract(result):
+            choice=result['choices'][0]
+            answer=choice['message'].get('content','')
+            if not isinstance(answer,str):raise ValueError('Invalid content')
+            # Unclosed reasoning must never become a user-facing answer.
+            answer=re.sub(r'<think>.*?(?:</think>|$)','',answer,flags=re.S).strip()
+            try:answer=normalize_answer(answer)
+            except ValueError:answer=''
+            return answer,choice.get('finish_reason')
         result=self.post('/chat/completions',payload)
-        answer=result['choices'][0]['message'].get('content','')
-        answer=re.sub(r'<think>.*?</think>','',answer,flags=re.S).strip()
-        if not answer:raise ValueError('Empty model answer')
-        return normalize_answer(answer)
+        original,reason=extract(result)
+        needs_recovery=(reason=='length' or not original)
+        # One logical regeneration, using only original evidence, never the draft.
+        # post() retains its existing bounded transport retries and shared deadline.
+        time_left=self.deadline-time.monotonic() if self.deadline is not None else 60
+        if needs_recovery:
+            print(json.dumps({'event':'incomplete_generation','reason':reason,
+                              'has_content':bool(original)}),file=sys.stderr)
+        if needs_recovery and time_left>=12:
+            retry=dict(payload)
+            retry['messages']=payload['messages']+[{'role':'user','content':
+                'Дай заново короткий законченный ответ на последний вопрос: до 100 слов. '
+                'Сначала прямой ответ, затем необходимые условия из документов. '
+                'Не теряй ограничения и не выводи рассуждения.'}]
+            try:
+                recovered,recovered_reason=extract(self.post('/chat/completions',retry))
+                if recovered and recovered_reason in ('stop',None):
+                    return recovered
+            except Exception as exc:
+                print('Recovery failed: '+type(exc).__name__,file=sys.stderr)
+        if original:return original
+        raise ValueError('No usable final content')
 
 def locate(names):
     data_dir=Path(env('DATA_DIR',default='data'))
@@ -149,7 +178,8 @@ def main():
         validate_answers(args.output,rows)
         if returncode:raise SystemExit(returncode)
         return
-    search=Search(chunks(documents(kb)))
+    kb_documents=documents(kb)
+    search=HierarchicalSearch(kb_documents) if env('USE_HIERARCHY',default='1')=='1' else Search(chunks(kb_documents))
     if not search.items:raise ValueError('Empty knowledge base')
     if args.validate_only:
         print(json.dumps({'questions':len(rows),'sections':len(search.items),'valid':True}));return
@@ -162,7 +192,13 @@ def main():
     # Empty input has a well-defined output and does not need an API call.
     if rows:
         api=API(deadline=deadline)
-        answers, errors=run_batch(rows, lambda question: api.answer(question,search.find(question,k=top_k)),
+        if env('USE_HYBRID',default='0')=='1' and hasattr(api,'post'):
+            embedding_deadline=min(deadline-120,time.monotonic()+120)
+            if embedding_deadline>time.monotonic()+2:
+                embedding_api=API(deadline=embedding_deadline)
+                search=prepare_hybrid(search,[r['question'] for r in rows],embedding_api,
+                                      env('EMB_MODEL',default='baai/bge-m3'),embedding_deadline,anchor_k=top_k)
+        answers, errors=run_batch(rows, lambda question: api.answer(question,search.find(question,k=min(100,max(36,top_k*3)))),
                                   workers, deadline=deadline,
                                   checkpoint=lambda answers:write_answers(args.output,rows,answers))
     else:

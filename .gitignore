@@ -1,10 +1,5 @@
 # Do not accidentally publish organizer-provided case data.
-/[Kk]nowledge-base/
-docs/source/
-/Технический регламент _ МТС.docx
-/sample_submission/
-demo_questions.csv
-demo_output.csv
+
 
 # Never commit credentials or local configuration.
 .env

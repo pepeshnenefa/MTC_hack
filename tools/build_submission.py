@@ -6,7 +6,7 @@ from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('solution.py', 'batch_io.py', 'retrieval.py', 'requirements.txt')
+FILES = ('solution.py', 'batch_io.py', 'retrieval.py', 'context.py', 'hybrid.py', 'hierarchy.py', 'requirements.txt')
 
 
 def build(output):
