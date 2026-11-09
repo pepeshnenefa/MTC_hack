@@ -1,0 +1,12 @@
+{
+  "archive": "energytool-hybrid-v1.zip",
+  "sha256": "5e2034b73687c182a6ce7a5e46bd74d091c6e96c159b932b6a65948b758bf307",
+  "files": {
+    "solution.py": "dc2c8ea0094df92083e3fffb21dc89cdb22bfb127b39c6622a97857b4c0c76f9",
+    "batch_io.py": "8a9d6e3445a51f29380dd011484834a871da1f45aa9863ac98260f29d58c324b",
+    "retrieval.py": "ef15184a4309ecc5308570925a8df0af25c516a55c153fff79a55ac3af93f068",
+    "context.py": "029fc4a509689953d71a4b5cdaa42a0e04e789f290a34235b1bd9015291c6a37",
+    "hybrid.py": "d0f9b5185378036dc58ae3dfbd42c4fd625c9121966fa6bc4652ed41d90a4b05",
+    "requirements.txt": "2586b65c6f034fab2206dbd1dc7982cb67592c268a3b6d54c9ec5607e345b37b"
+  }
+}
