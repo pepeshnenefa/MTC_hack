@@ -1,0 +1,23 @@
+# Do not accidentally publish organizer-provided case data.
+Knowledge-base/
+docs/source/
+demo_questions.csv
+demo_output.csv
+
+# Never commit credentials or local configuration.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Generated data and development artefacts.
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+work/
+data/
+submission.csv
+.pytest_cache/
