@@ -1,6 +1,8 @@
 # Do not accidentally publish organizer-provided case data.
-Knowledge-base/
+/[Kk]nowledge-base/
 docs/source/
+/Технический регламент _ МТС.docx
+/sample_submission/
 demo_questions.csv
 demo_output.csv
 
@@ -21,3 +23,5 @@ work/
 data/
 submission.csv
 .pytest_cache/
+/.deps/
+/.local-backup-before-*/
