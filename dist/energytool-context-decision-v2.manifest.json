@@ -1,0 +1,17 @@
+{
+  "archive": "energytool-context-decision-v2.zip",
+  "base": "energytool-context-v1.zip",
+  "base_sha256": "5cd8328cfed2e3ff379e41a92b010f9990b77a738c2c7b54c8b039bb4c8bcab0",
+  "sha256": "d310f63f19e3dd88e0629fe0f46b0d721042bf7292afd7cdbd3414a45d2a083c",
+  "files": {
+    "solution.py": "8f9c7584ed5122ca706fbbb1c2e49517f11a8a56acbaba1b70ab707a586ae407",
+    "batch_io.py": "8a9d6e3445a51f29380dd011484834a871da1f45aa9863ac98260f29d58c324b",
+    "retrieval.py": "ef15184a4309ecc5308570925a8df0af25c516a55c153fff79a55ac3af93f068",
+    "context.py": "029fc4a509689953d71a4b5cdaa42a0e04e789f290a34235b1bd9015291c6a37",
+    "requirements.txt": "2586b65c6f034fab2206dbd1dc7982cb67592c268a3b6d54c9ec5607e345b37b",
+    "decision_v2.py": "c172912890654685f2b43f23ffc1eb911d7b724c20216e816c7afa5c44af1faf"
+  },
+  "status": "prepared_not_submitted",
+  "mode": "decision_v2",
+  "score": null
+}

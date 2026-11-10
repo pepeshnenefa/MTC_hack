@@ -48,11 +48,11 @@ class DecisionSubmissionTests(unittest.TestCase):
         self.assertEqual(api.calls,[])
 
     def test_both_archives_real_pipeline_with_synthetic_transport(self):
-        for name in ('context','hierarchy'):
-            with self.subTest(base=name),tempfile.TemporaryDirectory() as directory:
+        for name,mode in (('context','decision'),('hierarchy','decision'),('context','decision_v2')):
+            with self.subTest(base=name,mode=mode),tempfile.TemporaryDirectory() as directory:
                 root=Path(directory);archive=root/'candidate.zip'
                 base=ROOT/f'dist/energytool-{name}-v1.zip'
-                builder.build(base,archive)
+                builder.build(base,archive,mode)
                 with zipfile.ZipFile(base) as before,zipfile.ZipFile(archive) as after:
                     for entry in before.namelist():
                         if entry!='solution.py':self.assertEqual(before.read(entry),after.read(entry))
