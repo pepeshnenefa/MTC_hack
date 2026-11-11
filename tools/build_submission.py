@@ -6,12 +6,25 @@ from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('solution.py', 'batch_io.py', 'retrieval.py', 'context.py', 'hybrid.py', 'hierarchy.py', 'requirements.txt')
+FILES = ('solution.py', 'batch_io.py', 'config.py', 'retrieval.py', 'context.py', 'corrections.py', 'hybrid.py', 'hierarchy.py', 'requirements.txt')
 
 
-def build(output):
+def with_defaults(source, overrides):
+    """Variant archives differ only in config defaults (e.g. USE_HYBRID=0); the code is identical."""
+    import re
+    text=source.decode('utf-8')
+    for name,value in overrides.items():
+        pattern=re.compile(r"(    '"+re.escape(name)+r"': )([^,\n]+)(,)")
+        if len(pattern.findall(text))!=1:raise ValueError('Unknown setting: '+name)
+        literal=value if re.fullmatch(r'-?\d+(\.\d+)?',value) else repr(value)
+        text=pattern.sub(lambda m:m.group(1)+literal+m.group(3),text)
+    return text.encode('utf-8')
+
+
+def build(output, overrides=None):
     output=Path(output)
     contents={name:(ROOT/'submission'/name).read_bytes() for name in FILES}
+    if overrides:contents['config.py']=with_defaults(contents['config.py'],overrides)
     for name, data in contents.items():
         if name.endswith('.py'):
             compile(data.decode('utf-8'),name,'exec')
@@ -28,6 +41,7 @@ def build(output):
         assert set(archive.namelist())==set(FILES)
         assert archive.testzip() is None
     manifest={'archive':output.name,'sha256':hashlib.sha256(output.read_bytes()).hexdigest(),
+              'default_overrides':overrides or {},
               'files':{n:hashlib.sha256(b).hexdigest() for n,b in contents.items()}}
     output.with_suffix('.manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
     return manifest
@@ -35,5 +49,6 @@ def build(output):
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--output',type=Path,default=ROOT/'dist'/'energytool-submission.zip')
+    parser.add_argument('--set',action='append',default=[],help='NAME=VALUE default for a variant archive')
     args=parser.parse_args()
-    print(json.dumps(build(args.output),indent=2))
+    print(json.dumps(build(args.output,dict(pair.split('=',1) for pair in args.set)),indent=2))
