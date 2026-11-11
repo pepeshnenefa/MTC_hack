@@ -56,7 +56,7 @@ class HierarchyEntryPointTests(unittest.TestCase):
    requests=[]
    def post(api,endpoint,body):
     requests.append((endpoint,body));return {'choices':[{'message':{'content':'Тест ответа'},'finish_reason':'stop'}]}
-   config={'LLM_BASE_URL':'http://synthetic.invalid','LLM_API_KEY':'synthetic','LLM_MODEL':'synthetic'}
+   config={'LLM_BASE_URL':'http://synthetic.invalid','LLM_API_KEY':'synthetic','LLM_MODEL':'synthetic','USE_HIERARCHY':'1'}
    argv=['solution.py','--worker','--questions',str(root/'q.csv'),'--kb',str(kb.parent),'--output',str(root/'out.csv')]
    with patch.dict(os.environ,config,clear=True),patch.object(sys,'argv',argv),patch.object(solution.API,'post',post):solution.main()
    self.assertEqual(len(requests),1);self.assertEqual(requests[0][0],'/chat/completions')

@@ -43,7 +43,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(captured[-1][1]['temperature'],.25)
         self.assertEqual(captured[-1][1]['max_tokens'],777)
     def test_retries_limited_and_401_not_retried(self):
-        for status,expected in [(429,3),(503,3),(401,1)]:
+        for status,expected in [(429,5),(503,5),(401,1)]:
             error=HTTPError('http://localhost',status,'error',{},None)
             with patch.dict(os.environ,BASE,clear=True),patch.object(solution,'urlopen',side_effect=error) as call,patch.object(solution.time,'sleep'):
                 with self.assertRaises(HTTPError):solution.API().post('/chat/completions',{})
@@ -68,7 +68,7 @@ class RuntimeTests(unittest.TestCase):
             rows=read_questions(data/'questions.csv')
             self.assertEqual(validate_answers(root/'submission.csv',rows),2)
             text=(root/'submission.csv').read_text(encoding='utf-8')
-            self.assertIn('Готовый ответ',text);self.assertIn('технической ошибки',text)
+            self.assertIn('Готовый ответ',text);self.assertIn('передать вопрос специалисту',text)
             self.assertIn('budget exhausted',run.stderr)
 
 if __name__=='__main__':unittest.main()

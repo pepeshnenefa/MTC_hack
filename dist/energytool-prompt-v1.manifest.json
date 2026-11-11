@@ -1,0 +1,13 @@
+{
+  "archive": "energytool-prompt-v1.zip",
+  "sha256": "3b6571df9ec695be7b47f662b72bc105ce097e99c12cf2afbfefd8d5ff8aeafe",
+  "files": {
+    "solution.py": "ebb6f6e26d797496d0a2382b19318c21fa1da4fd87a355a5ee6698f21ee7b1a0",
+    "batch_io.py": "53b06555fc04de96e0f98acacde7cd581f9ce0666c01bb17213d57972d42efcb",
+    "retrieval.py": "762c40597868e7cc140966f3d4aeba7661604cd4fd9939132a5baf3d5d1e608c",
+    "context.py": "41090608319f8d309e7bbdd642ea857c1cd04eee68893bb1640c33f27f83a745",
+    "hybrid.py": "0a3d926b1f78f8af0dd1d7bbf950a7ce782d3100b95338ec4c9822d31fb82f0e",
+    "hierarchy.py": "cef54c0b3950a743e00522478ba701f1341841920b788780fe3cfa17de68fbf6",
+    "requirements.txt": "780b07894d16bf730a7f4a55418a60ac89382510c02d1f9e004a6231700e5031"
+  }
+}
