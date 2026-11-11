@@ -1,0 +1,18 @@
+{
+  "archive": "energytool-context-structured-query-v1.zip",
+  "base_sha256": "5cd8328cfed2e3ff379e41a92b010f9990b77a738c2c7b54c8b039bb4c8bcab0",
+  "sha256": "f08eaef43f5648c74fd0460f172774c2d20b9544a54b3c94add81eb9652a1891",
+  "files": {
+    "solution.py": "f61dbaa7e1f7e913e6b139b609ea1b332eb5edcf011b68ec644a361303e57766",
+    "batch_io.py": "8a9d6e3445a51f29380dd011484834a871da1f45aa9863ac98260f29d58c324b",
+    "retrieval.py": "ef15184a4309ecc5308570925a8df0af25c516a55c153fff79a55ac3af93f068",
+    "context.py": "029fc4a509689953d71a4b5cdaa42a0e04e789f290a34235b1bd9015291c6a37",
+    "requirements.txt": "2586b65c6f034fab2206dbd1dc7982cb67592c268a3b6d54c9ec5607e345b37b",
+    "structured_query.py": "32a1d0fa9340f7468ba218e8c5a16ec5e622a9b5e2d970f3843aa6b7fcb758bc"
+  },
+  "changed_baseline_files": [
+    "solution.py"
+  ],
+  "status": "prepared_not_submitted",
+  "score": null
+}
