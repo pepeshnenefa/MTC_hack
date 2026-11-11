@@ -1,0 +1,19 @@
+{
+  "archive": "energytool-context-corrections-v1.zip",
+  "base": "energytool-context-v1.zip",
+  "base_sha256": "5cd8328cfed2e3ff379e41a92b010f9990b77a738c2c7b54c8b039bb4c8bcab0",
+  "sha256": "3d0c1737969080466f4f0e14ee642646320f68cef47c9cdc3728883819702ac4",
+  "files": {
+    "solution.py": "e090f2fd27af86dd2e4fba38213bd32d3210986267baf1f6289bde692e1cf61f",
+    "batch_io.py": "8a9d6e3445a51f29380dd011484834a871da1f45aa9863ac98260f29d58c324b",
+    "retrieval.py": "afdbad4b63fbc3bba68dfe59a5a9faf3727901c2f09131604be01e63e3f2378d",
+    "context.py": "029fc4a509689953d71a4b5cdaa42a0e04e789f290a34235b1bd9015291c6a37",
+    "requirements.txt": "2586b65c6f034fab2206dbd1dc7982cb67592c268a3b6d54c9ec5607e345b37b",
+    "corrections.py": "8e4435f37a894cf9eace5bf05c404185ef6e3dcfe6f6a66bbe349d6ae9f3306d"
+  },
+  "changed_baseline_files": [
+    "retrieval.py"
+  ],
+  "status": "prepared_not_submitted",
+  "score": null
+}
