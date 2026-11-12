@@ -41,7 +41,7 @@ FAMILY = {'power': 'power', 'energy': 'energy', 'months': 'duration', 'days': 'd
 TOKEN = re.compile('|'.join(
     ['(?P<u%d>%s)' % (i, p) for i, (p, _, _) in enumerate(UNITS)] +
     ['(?P<m%d>(?<![а-я])(?:%s))' % (i, p) for i, (p, _) in enumerate(MULTIPLIERS)] +
-    [r'(?P<h>полгода|полугода)', '(?P<d>%s)' % DIGITS, r'(?P<r>--|[–—\-]|(?<![а-я])до(?![а-я]))',
+    [r'(?P<h>полгода|полугода)', r'(?P<hp>(?<![а-я])пол-?(?=мегаватт|киловатт|мвт|квт))', '(?P<d>%s)' % DIGITS, r'(?P<r>--|[–—\-]|(?<![а-я])до(?![а-я]))',
      r'(?P<w>[а-яa-z]+)', r'(?P<p>[^\s\w])']))
 NUMERAL = [(re.compile('(?:' + p + ')$'), v, rank) for p, v, rank in NUMERALS]
 APPROX = {'на', 'по', 'около', 'примерно', 'где', 'то', 'этак', 'так', 'в', 'порядка'}
@@ -49,12 +49,29 @@ BOUND_WORDS = {'менее', 'более', 'больше', 'меньше', 'до
 PERIODS = [('month', r'месяц|ежемесячн|месячн|/\s?мес|в мес'), ('year', r'(?<![а-я])год|ежегодн|годов'),
            ('day', r'сутк|суточн|в день|за день')]
 PERIOD_WORDS = {'month': 'месяц', 'year': 'год', 'day': 'сутки'}
+DAYS_IN = {'month': (28, 31), 'year': (365, 366)}
 # A later turn replaces an earlier value only when it says so; otherwise two values contradict.
-CORRECTION = re.compile(r'исправ|поправ|уточн|ошиб|перепут|оговор|(?<![а-я])а не(?![а-я])|на самом деле|оказал|оказыв|'
-                        r'точнее|вернее|неверн|неправильн|поднял|проверил|посмотрел|по факту|(?<![а-я])стоп(?![а-я])')
+CORRECTION = re.compile(r'исправ|поправ|уточн|ошиб|перепут|(?<![а-я])оговор|(?<![а-я])а не(?![а-я])|на самом деле|оказал|оказыв|'
+                        r'точнее|вернее|неверн|неправильн|поднял|проверил|посмотрел|по факту|(?<![а-я])стоп(?![а-я])|'
+                        r'пересчит|перемер|перепровер|актуальн|обновл|(?<![а-я])свеж[а-я]*|погорячил|'
+                        r'(?<![а-я])стар(?:ая|ую|ой|ые|ых|ый|ое) (?:цифр|данн|значени|расч|акт)')
+# A turn that adds an object ("второй 20 кВт", "оба от одного щита") does not correct the earlier one.
+MORE_OBJECTS = re.compile(r'(?<![а-я])(?:втор(?:ой|ая|ое|ом|ую|ого)|ещ[её] (?:один|одна|одно|одну)|оба|обе|обоих|обеих|'
+                          r'кажд(?:ый|ая|ое|ом|ой|ую))(?![а-я])')
+# The client does not know which of the values they named is right: they are alternatives of one quantity, not objects.
+DOUBT = re.compile(r'путаниц|расхожд|расходятся|не сходятся|не совпада|(?<![а-я])то ли(?![а-я])|'
+                   r'(?<![а-я])как(?:ая|ое|ой|ую)(?: [а-я]+){0,2} (?:правильн|верн)|не знаю,? (?:как|котор)')
 SUM_RULE = re.compile(r'суммиру|складываются')
-# Word stems too general to show that a clause speaks about the condition of a rule.
-GENERIC = {'мощн', 'потр', 'энер', 'кило', 'мега', 'толь', 'начи', 'уров', 'нали', 'межд', 'объе', 'боле', 'мене', 'случ'}
+# Word stems too general to show that a clause speaks about the condition of a rule ("электричество" is
+# not "электрическая связность").
+GENERIC = {'мощн', 'потр', 'энер', 'кило', 'мега', 'толь', 'начи', 'уров', 'нали', 'межд', 'объе', 'боле', 'мене', 'случ', 'элек'}
+# A voltage level named by the rule ("связность хотя бы по 0,4 кВ") is evidence only together with a word that
+# links the objects to each other: "обе площадки на 0,4 кВ" says nothing about a link between them.
+VOLTAGE = re.compile(r'(\d+(?:[.,]\d+)?)\s*кв(?![а-я])')
+LINK = re.compile(r'(?<![а-я])между(?![а-я])|друг с друг|друг к друг|перемыч|соедин|объедин|связ')
+# A multiplier alone stands for one unit only in the singular ("тысяча киловатт", "миллион киловатт-часов");
+# "тысяч киловатт" or "млн кВт·ч" has lost its numeral and is not read at all.
+SINGLE_MULT = re.compile(r'тысяч[аиуе]|тысячей|миллион(?:а|у|ом|е)?|миллиард(?:а|у|ом|е)?')
 NEGATION = re.compile(r'(?<![а-я])(?:не|нет|никак|без|ни)(?![а-я])')
 # A document number is a bound only when its wording says so; "станция 100 кВт" is an example, not a limit.
 BOUND_BEFORE = re.compile(r'(?<![а-я])(?:от|до|не менее|не более|не меньше|не больше|не ниже|не выше|ниже|выше|менее|более|меньше|'
@@ -63,6 +80,22 @@ BOUND_AFTER = re.compile(r'порог|предел|лимит|(?<![а-я])и (?:
 # The client retells someone else's figure: it is not the client's own value whatever the extractor says.
 HEARSAY = re.compile(r'(?<![а-я])(?:сказал|говор|слышал|слыхал|читал|пишут|писали|написан|уверя|утвержда|якобы|мол(?![а-я])|'
                      r'по слухам|рассказ|подсказ|хваста|пугает|обещал)')
+# A colleague relaying the client's own figure ("энергетик говорит, что мощность у нас 30 кВт") is not hearsay.
+FIRST_PERSON = re.compile(r'(?<![а-я])(?:у нас|наш[а-я]*|у меня|мо(?:й|я|е|и|его|ей)|мы|нам)(?![а-я])')
+# A sentence about someone else's object: its figure is not the client's even when nobody is quoted.
+THIRD_PARTY = re.compile(r'(?<![а-я])(?:у (?:них|него|нее|соседей|соседа|друзей|знакомых|коллег|конкурентов|других)|'
+                         r'сосед[а-я]*|конкурент[а-я]*|например|пример[а-я]*|в рекламе)(?![а-я])')
+# Words right before a number that make it a bound, not a value: "только от 40 кВт", "не больше 15 кВт".
+BOUND_WORDED = re.compile(r'(?<![а-я])(?:от|до|менее|более|больше|меньше|выше|ниже|свыше|минимум|максимум|порог[а-я]*|'
+                          r'предел[а-я]*|лимит[а-я]*|начиная с)(?: [а-я]+)?\s*$')
+# A question that asks whether the client's figure is enough or allowed, whatever the extractor calls it.
+ASKS_BOUND = re.compile(r'(?<![а-я])(?:можно|нельзя|обязан[а-я]*|обязательн[а-я]*|положен[а-я]*|хватит|хватает|достаточн[а-я]*|'
+                        r'успели|успеем|успеваем|дотягива[а-я]*|подходим|подходит|подойд[а-я]*|пройд[а-я]*|проходим|'
+                        r'возьм[её]т[а-я]*|допуска[а-я]*|разреш[а-я]*|получится)(?![а-я])')
+# Clause of a document that denies what it names: its words do not describe the step ("прямым участником стать нельзя").
+DENIAL = re.compile(r'(?<![а-я])(?:не|нет|нельзя|ни)(?![а-я])')
+# Words that negate what follows in the client's turn ("без посредника").
+CLIENT_DENIAL = re.compile(r'(?<![а-я])(?:без|не|нет)(?![а-я])')
 # Words right before a number that fix the kind of bound whatever the extractor says.
 STRICT_MIN = ('от', 'не менее', 'не меньше', 'минимум', 'не позднее чем за', 'не менее чем за')
 STRICT_MAX = ('до', 'не более', 'не больше', 'максимум')
@@ -85,6 +118,8 @@ def _tokens(text):
             out.append(('mult', MULTIPLIERS[int(kind[1:])][1], m.start(), m.end()))
         elif kind == 'h':
             out.append(('half', None, m.start(), m.end()))
+        elif kind == 'hp':
+            out.append(('num', (0.5, 0), m.start(), m.end()))  # "полмегаватта"
         elif kind == 'd':
             out.append(('num', (float(re.sub(r'[   ]', '', m.group()).replace(',', '.')), 0), m.start(), m.end()))
         elif kind == 'r':
@@ -109,10 +144,18 @@ def _number(tokens, i):
             value += tokens[j][1][0]
             rank = tokens[j][1][1]
             j += 1
+    if _half(tokens, j) and value == int(value):
+        value += 0.5  # "двенадцать с половиной тысяч"
+        j += 2
     if j < len(tokens) and tokens[j][0] == 'mult':
         value *= tokens[j][1]
         j += 1
     return value, j
+
+
+def _half(tokens, j):
+    return (j + 1 < len(tokens) and tokens[j][:2] == ('word', 'с') and tokens[j + 1][0] == 'word'
+            and tokens[j + 1][1] in ('половиной', 'половинкой'))
 
 
 def _start(tokens, i):
@@ -120,6 +163,8 @@ def _start(tokens, i):
     start = i - 1
     if start >= 0 and tokens[start][0] == 'mult':
         start -= 1
+    if start >= 2 and tokens[start - 2][0] == 'num' and _half(tokens, start - 1):
+        start -= 2
     while (start > 0 and tokens[start][0] == 'num' and tokens[start - 1][0] == 'num'
            and tokens[start - 1][1][1] > tokens[start][1][1] > 0):
         start -= 1
@@ -176,24 +221,34 @@ def quantities(text, client=False):
             used.update(range(start, i + 1))
             # Earlier members of a range or a list share the unit: "от 15 до 500 кВт", "15, 60 и 150 кВт".
             right, edge = value, start
-            while edge >= 2 and (tokens[edge - 1][0] == 'range' or tokens[edge - 1][1] in (',', 'и', 'или')):
-                is_range = tokens[edge - 1][0] == 'range'
-                left = _start(tokens, edge - 1)
+            while edge >= 2:
+                link, preposition = edge - 1, None
+                # The client repeats a preposition in a list: "на 8 и на 7 мегаватт".
+                if (client and tokens[link][0] == 'word' and tokens[link][1] in APPROX and link >= 2
+                        and tokens[link - 1][1] in (',', 'и', 'или')):
+                    link, preposition = link - 1, tokens[link][1]
+                if not (tokens[link][0] == 'range' and not preposition or tokens[link][1] in (',', 'и', 'или')):
+                    break
+                is_range = tokens[link][0] == 'range'
+                left = _start(tokens, link)
                 other = _number(tokens, left) if left >= 0 else None
-                if not other or other[1] != edge - 1 or any(k in used for k in range(left, edge - 1)):
+                if not other or other[1] != link or any(k in used for k in range(left, link)):
+                    break
+                if preposition and not (left >= 1 and tokens[left - 1][:2] == ('word', preposition)):
                     break
                 # A range grows towards the unit; a document list too, which rejects stray numbers.
                 if other[0] >= right and (is_range or not client):
                     break
-                if not add(other[0], token[1], tokens[left][2], tokens[edge - 2][3]):
+                if not add(other[0], token[1], tokens[left][2], tokens[link - 1][3]):
                     break
-                used.update(range(left, edge - 1))
+                used.update(range(left, link))
                 right, edge = other[0], left
             continue
         if i >= 1 and tokens[i - 1][0] == 'mult' and (i < 2 or tokens[i - 2][0] != 'num'):
-            add(tokens[i - 1][1], token[1], tokens[i - 1][2], token[3])  # "миллион киловатт-часов"
-            used.update((i - 1, i))
-            continue
+            if SINGLE_MULT.fullmatch(text[tokens[i - 1][2]:tokens[i - 1][3]]):
+                add(tokens[i - 1][1], token[1], tokens[i - 1][2], token[3])  # "миллион киловатт-часов"
+                used.update((i - 1, i))
+            continue  # "тысяч киловатт": the numeral is missing, nothing is read
         if token[1][0] in DURATION and i >= 1 and tokens[i - 1][0] in ('word', 'range') and \
                 (tokens[i - 1][1] in BOUND_WORDS or tokens[i - 1][0] == 'range' and text[tokens[i - 1][2]:tokens[i - 1][3]] == 'до'):
             add(1.0, token[1], token[2], token[3])  # "не менее года": one unit is implied
@@ -478,6 +533,25 @@ def _locate(quote, text):
     return index[at], index[at + len(wanted) - 1] + 1
 
 
+def _sentence_start(text, start):
+    return max(text.rfind(mark, 0, start) for mark in '.!?…\n') + 1
+
+
+def _bound_worded(text, start):
+    return bool(BOUND_WORDED.search(norm(text[max(0, start - 30):start])))
+
+
+def _reported(text, start):
+    """Whether a figure of a client turn is someone else's statement: reported speech before it in its
+    sentence. A speaker who relays the client's own figure ("энергетик говорит, что мощность у нас
+    30 кВт") does not make it someone else's, unless the figure is worded as a bound ("только от 40 кВт")."""
+    before = norm(text[_sentence_start(text, start):start])
+    cues = list(HEARSAY.finditer(before))
+    if not cues:
+        return False
+    return not (FIRST_PERSON.search(before[cues[-1].end():]) and not _bound_worded(text, start))
+
+
 def validate_values(data, question, families, log):
     """Client values confirmed in the dialogue: each with turn, offsets, parsed quantity and labels."""
     talk = dialogue(question)
@@ -500,9 +574,15 @@ def validate_values(data, question, families, log):
         inside = [q for q in quantities(text, client=True) if q['start'] < end and q['end'] > start and FAMILY[q['dimension']] in families]
         inferred = False
         if not inside:
-            # A bare number whose unit the client left out ("на одной 400 кВт, на другой 450").
+            # A bare number whose unit the client left out ("на одной 400 кВт, на другой 450"). When the
+            # extractor gave no unit either, the number takes the unit of the nearest quantity of the
+            # same turn ("в расчёте 130 кВт, а в письме — 170").
             unit = unit_of(item.get('unit') or '')
             numbers = [n for n in bare_numbers(text) if n[1] < end and n[2] > start]
+            if not unit and len(numbers) == 1:
+                near = sorted((q for q in quantities(text, client=True) if FAMILY[q['dimension']] in families),
+                              key=lambda q: (q['start'] > numbers[0][1], abs(q['start'] - numbers[0][1])))
+                unit = unit_of(near[0]['text']) if near else None
             if not unit or len(numbers) != 1 or FAMILY[unit[0]] not in families:
                 log.append({'value': item.get('id'), 'quote': item['quote'], 'rejected': 'no readable quantity in the fragment'})
                 continue
@@ -524,8 +604,7 @@ def validate_values(data, question, families, log):
                 pattern = dict(PERIODS).get(named, '')
                 if named and (re.search(pattern, norm(text)) or re.search(pattern, norm(previous))):
                     period, period_inferred = named, True
-            sentence = max(text.rfind(mark, 0, q['start']) for mark in '.!?…\n') + 1
-            hearsay = bool(HEARSAY.search(norm(text[sentence:q['start']])))
+            hearsay = _reported(text, q['start'])
             label = norm(item.get('object') or '') or 'объект'
             if len(inside) > 1 and len({x['dimension'] for x in inside}) == 1:
                 label += ' #%d' % (k + 1)  # a list of numbers in one fragment is a list of objects
@@ -630,7 +709,7 @@ def validate_limits(data, doc_blocks, values, log):
         if not applies:
             applies = [v for v in values if v['own'] and FAMILY[v['dimension']] == family]
         if not applies:
-            log.append({'limit': index, 'quote': item['quote'], 'rejected': 'no client value of this kind'})
+            log.append({'limit': index, 'quote': item['quote'], 'rejected': 'no client value of this kind', 'family': family})
             continue
         if any((l['dimension'], l['low'], l['high']) == (low['dimension'], low['value'], high['value']) for l in limits):
             continue  # the same bound cited from another block
@@ -685,20 +764,29 @@ def validate_sum(data, doc_blocks, question):
     # Evidence is found by code, not taken on trust: a clause of the client that shares vocabulary with
     # the rule ("связаны" — "связности", "соединены"). The extractor only says which way it reads, and
     # a negation in the clause must agree with that reading.
-    vocabulary = set()
+    vocabulary, voltages = set(), set()
     for b in rules:
         flat = norm(b['text'])
         cue = SUM_RULE.search(flat)
         end = flat.find('. ', cue.end())
+        condition = flat[cue.end():len(flat) if end == -1 else end]
         subject = {w[:4] for w in re.findall(r'[а-я]{6,}', flat[:cue.start()])}  # what is added, not when
-        vocabulary |= {w[:4] for w in re.findall(r'[а-я]{6,}', flat[cue.end():len(flat) if end == -1 else end])} - subject
+        vocabulary |= {w[:4] for w in re.findall(r'[а-я]{6,}', condition)} - subject
+        voltages |= {float(v.replace(',', '.')) for v in VOLTAGE.findall(condition)}
     vocabulary -= GENERIC
+
+    def speaks_of_condition(clause):
+        flat = norm(clause)
+        if {w[:4] for w in re.findall(r'[а-я]{6,}', flat)} & vocabulary:
+            return True
+        named = {float(v.replace(',', '.')) for v in VOLTAGE.findall(flat)}
+        return bool(named & voltages) and bool(LINK.search(flat))
     said = None
     for no, is_user, text in reversed(dialogue(question)):
         if not is_user or said:
             continue
-        for clause in re.split(r'[.!?;:\n]+', text):
-            if {w[:4] for w in re.findall(r'[а-я]{6,}', norm(clause))} & vocabulary:
+        for clause in re.split(r'(?<!\d)[.!?;:\n]+|[.!?;:\n]+(?!\d)', text):
+            if speaks_of_condition(clause):
                 said = (no, ' '.join(clause.split()), bool(NEGATION.search(norm(clause))))
                 break
     if not rule or not said:
@@ -711,8 +799,292 @@ def validate_sum(data, doc_blocks, question):
 
 
 # ---------------------------------------------------------------------------------------------
+# Stage 2b: whose value and which bound, settled by code where the extractor is silent or unsure
+# ---------------------------------------------------------------------------------------------
+
+def _known(doc_blocks):
+    return {(q['dimension'], round(q['value'], 9)) for b in doc_blocks for q in b['quantities']}
+
+
+def _base(label):
+    return re.sub(r' #\d+$', '', label)
+
+
+def settle_ownership(values, question, doc_blocks):
+    """The extractor's "not the client's" stands when there is evidence for it (reported speech, a bound of
+    the documents, a sentence about someone else, bound wording) or nothing against it. It is overruled
+    when the extractor gave the same object name to an own value of the same turn (two values of one
+    object: a contradiction to ask about), when the last turn corrects the client's figures, or when the
+    value is the only quantity of its kind in the client's turns and the client speaks of themselves."""
+    mine = [(no, text) for no, is_user, text in dialogue(question) if is_user]
+    texts = dict(mine)
+    last_no, last_text = mine[-1]
+    known = _known(doc_blocks)
+    for v in values:
+        if v['own'] or v['hearsay'] or (v['dimension'], round(v['value'], 9)) in known:
+            continue
+        text = texts[v['turn']]
+        if THIRD_PARTY.search(norm(text[_sentence_start(text, v['start']):v['end']])) or _bound_worded(text, v['start']):
+            continue
+        family = FAMILY[v['dimension']]
+        if any(o['own'] and o['turn'] == v['turn'] and o['dimension'] == v['dimension'] and _base(o['object']) == _base(v['object'])
+               for o in values):
+            v['own'], v['owner'] = True, 'same object'
+        elif v['turn'] == last_no and CORRECTION.search(norm(last_text)):
+            v['own'], v['owner'] = True, 'correction'
+        elif (not any(o['own'] and FAMILY[o['dimension']] == family for o in values) and FIRST_PERSON.search(norm(last_text))
+              and sum(FAMILY[q['dimension']] == family for _, t in mine for q in quantities(t, client=True)) == 1):
+            v['own'], v['owner'] = True, 'only value'
+    return values
+
+
+def code_values(question, family, doc_blocks, values):
+    """The client's figure of a kind the extractor left out, read by code from the last turn. Used only when a
+    confirmed bound has no client value at all. Exactly one figure must stand: not worded as a bound, not a
+    bound of the documents, not about someone else, not reported speech unless the turn corrects the
+    client's figures ("я погорячился: айтишники говорят, … за восемь месяцев"). Never a guess between figures."""
+    last_no, last_text = [(no, text) for no, is_user, text in dialogue(question) if is_user][-1]
+    known = _known(doc_blocks)
+    correcting = bool(CORRECTION.search(norm(last_text)))
+    found = []
+    for q in quantities(last_text, client=True):
+        if FAMILY[q['dimension']] != family or (q['dimension'], round(q['value'], 9)) in known:
+            continue
+        if any(v['turn'] == last_no and v['start'] < q['end'] and v['end'] > q['start'] for v in values):
+            continue  # the extractor has judged this figure already
+        if _bound_worded(last_text, q['start']) or THIRD_PARTY.search(norm(last_text[_sentence_start(last_text, q['start']):q['end']])):
+            continue
+        if _reported(last_text, q['start']) and not correcting:
+            continue
+        found.append(q)
+    if len({(q['dimension'], round(q['value'], 9), q['period']) for q in found}) != 1:
+        return []
+    q = found[-1]
+    return [{'id': 'code1', 'ref': 'code1', 'turn': last_no, 'start': q['start'], 'end': q['end'], 'text': last_text[q['start']:q['end']],
+             'quote': last_text[q['start']:q['end']], 'dimension': q['dimension'], 'value': q['value'], 'period': q['period'],
+             'unit_inferred': False, 'period_inferred': False, 'object': 'объект', 'own': True, 'hearsay': False, 'replaced': False,
+             'owner': 'code'}]
+
+
+# Words of units, numerals and scales say nothing about what a bound is for.
+UNIT_ROOTS = {'кило', 'мега', 'рабо', 'меся', 'неде', 'тыся', 'милл', 'сутк', 'кале'}
+
+
+def _content(text):
+    """Words that can tie two texts together: five letters or more, not a numeral, unit or general word."""
+    words = []
+    for word in re.findall(r'[а-я]+', text.lower().replace('ё', 'е')):
+        if len(word) < 5 or word[:4] in GENERIC or word[:4] in UNIT_ROOTS or any(p.match(word) for p, _, _ in NUMERAL):
+            continue
+        words.append(word)
+    return words
+
+
+ENDING = re.compile(r'(?:ениями|ением|ениях|ения|ение|ений|ается|яется|ется|ится|ость|ости|ями|ами|ого|его|ому|ему|ыми|ими|'
+                    r'ать|ять|еть|ить|ой|ей|ый|ий|ая|яя|ое|ее|ые|ие|ую|юю|ом|ем|ам|ям|ах|ях|ов|ев|ен|ут|ют|ат|ят|ит|ет|им|'
+                    r'а|я|о|е|ы|и|у|ю|ь)$')
+
+
+def _stem(word):
+    return ENDING.sub('', word)
+
+
+def _alike(a, b):
+    """Two words of one root, once endings are cut: "рассрочку" — "рассрочка", "напрямую" — "прямое",
+    "можно" — "возможно", "обязательно" — "обязателен"; but not "напрямую" — "напряжения"."""
+    short, long = sorted((_stem(a), _stem(b)), key=len)
+    return len(short) >= 4 and short in long
+
+
+def _question_sentences(question):
+    last = [text for _, is_user, text in dialogue(question) if is_user][-1]
+    sentences = [s for s in re.split(r'(?<=[.!?…])\s+', last.strip()) if s]
+    asked = [i for i, s in enumerate(sentences) if s.rstrip().endswith('?')]
+    return sentences, asked
+
+
+def asks_bound(question):
+    """The client's question asks whether something is enough, allowed or required: "можно ли…", "успели?"."""
+    sentences, asked = _question_sentences(question)
+    return any(ASKS_BOUND.search(norm(sentences[i])) for i in asked)
+
+
+def goal(question):
+    """What the client asks about: the question sentences of the last turn, with the sentence before them
+    when they are short ("Так можно?"). Each content word with whether the client negates it ("без посредника")."""
+    sentences, asked = _question_sentences(question)
+    if not asked:
+        return []  # no question: the client's words point at nothing
+    chosen = [sentences[i] for i in asked]
+    if len(_content(' '.join(chosen))) < 4 and asked[0] > 0:
+        chosen.insert(0, sentences[asked[0] - 1])
+    words, seen = [], set()
+    for sentence in chosen:
+        for clause in re.split(r'[,;:—–()]|\s-\s', sentence.lower().replace('ё', 'е')):
+            negated_until = -1
+            for k, token in enumerate(re.findall(r'[а-я]+', clause)):
+                if CLIENT_DENIAL.fullmatch(token):
+                    negated_until = k + 3
+                elif token not in seen and _content(token):
+                    seen.add(token)
+                    words.append((token, k <= negated_until))
+    return words
+
+
+def tied_to_question(limit, doc_blocks, question):
+    """The block of a bound shares a word root with what the client asks."""
+    block = next((b for b in doc_blocks if b['no'] == limit['block']), None)
+    words = _content(block['text']) if block else []
+    return any(_alike(asked, word) for asked, _ in goal(question) for word in words)
+
+
+def _block_bound(block, dimension):
+    """The bound one block states for a quantity: a range when it names two values of it, otherwise a minimum
+    or maximum when the word before the number says so ("от", "не менее", "до"); None when unclear."""
+    qs = sorted((q for q in block['quantities'] if q['dimension'] == dimension), key=lambda q: (q['value'], q['start']))
+    values = sorted({q['value'] for q in qs})
+    if not qs or len(values) > 2 or len({q['period'] for q in qs}) != 1:
+        return None
+    low = qs[0]
+    high = next(q for q in qs if q['value'] == values[-1])
+    kind = 'range' if len(values) == 2 else _bound_cue(block['text'], low['start'])
+    if not kind:
+        return None
+    if kind != 'range':
+        high = low
+    return {'kind': kind, 'dimension': dimension, 'low': low['value'], 'high': high['value'], 'period': low['period'],
+            'block': block['no'], 'source': block['source'], 'title': block['title'],
+            'text': ' — '.join(dict.fromkeys(block['text'][q['start']:q['end']] for q in (low, high))),
+            'sentence': _sentence(block['text'], low['start'], high['end']), 'start': low['start'], 'end': high['end'],
+            'exclusive_low': kind != 'max' and _exclusive(block['text'], low['start'], 'min'),
+            'exclusive_high': kind != 'min' and _exclusive(block['text'], high['start'], 'max'), 'values': []}
+
+
+def _key(limit):
+    return limit['kind'], limit['dimension'], limit['low'], limit['high'], limit['period']
+
+
+def _adjacent(a, b):
+    """'next' when two bounds are neighbouring steps of one scale, 'overlap' when they cover the same values
+    (two readings of one step, or two different scales), None when they do not touch. A minimum A is the edge
+    where a step begins or ends; a maximum B ends a step; a range is a step."""
+    if a['kind'] != 'range' and b['kind'] == 'range':
+        a, b = b, a
+    if a['kind'] == 'range' and b['kind'] == 'range':
+        if a['low'] == b['high'] or a['high'] == b['low']:
+            return 'next'
+        return 'overlap' if a['low'] == b['low'] or a['high'] == b['high'] else None
+    if a['kind'] == 'range':
+        if b['kind'] == 'min':
+            return 'next' if b['low'] in (a['low'], a['high']) else None
+        return 'next' if b['high'] == a['low'] else ('overlap' if b['high'] == a['high'] else None)
+    return None
+
+
+def ladder(limits, doc_blocks):
+    """Steps of the deciding bound's scale stated anywhere in the blocks ("ниже A…", "от A, но менее B…",
+    "от B…"): a bound joins when it is the neighbouring step of one already on the scale and overlaps none
+    of them. They are candidates for the bound the client asks about and reach the note only when chosen."""
+    if not limits:
+        return []
+    first = limits[0]
+    scale = [l for l in limits if l['dimension'] == first['dimension'] and l['period'] == first['period']]
+    taken = {_key(l) for l in limits}
+    found, grew = [], True
+    while grew:
+        grew = False
+        for block in doc_blocks:
+            bound = _block_bound(block, first['dimension'])
+            if not bound or bound['period'] != first['period'] or _key(bound) in taken:
+                continue
+            touch = [_adjacent(bound, step) for step in scale]
+            if 'overlap' in touch or 'next' not in touch:
+                continue
+            taken.add(_key(bound))
+            scale.append(bound)
+            found.append(dict(bound, values=list(first['values']), step=True, ladder=True))
+            grew = True
+    return found
+
+
+def _step_words(limit, doc_blocks):
+    """Words of every block that states this very bound: (what the step affirms, everything around it).
+    Clauses that deny something are left out of the first set ("прямым участником стать нельзя"); the
+    second also holds denied clauses and the section titles, the topic shared by a scale."""
+    shape = {limit['low'], limit['high']}
+    said, around = set(), set()
+    for block in doc_blocks:
+        if {q['value'] for q in block['quantities'] if q['dimension'] == limit['dimension']} != shape:
+            continue
+        flat = ' '.join(block['text'].replace('*', ' ').split()).lower().replace('ё', 'е')
+        for clause in re.split(r'[.;:!?,]', flat):
+            words = _content(clause)
+            around.update(words)
+            if not DENIAL.search(clause):
+                said.update(words)
+        around.update(_content(block['title']))
+    return said, around
+
+
+def asked_bound(checks, question, doc_blocks):
+    """Index of the check whose bound the client's words point at, 0 when they single out none.
+
+    A word of the question counts for every bound whose wording affirms its root, and only when some bound
+    lacks it and it is not the topic of them all; a word the client negates counts against. The first check is replaced only by a bound that
+    scores strictly higher than it and than every other one."""
+    texts = [_step_words(c['limit'], doc_blocks) for c in checks]
+    scores = [0] * len(checks)
+    for word, negated in goal(question):
+        if all(any(_alike(word, w) for w in around) for _, around in texts):
+            continue  # the topic of every bound ("пост на участке"), not what sets one apart
+        hits = [i for i, (said, _) in enumerate(texts) if any(_alike(word, w) for w in said)]
+        if hits and len(hits) < len(texts):
+            for i in hits:
+                scores[i] += -1 if negated else 1
+    best = max(range(len(checks)), key=lambda i: scores[i])
+    if scores[best] > scores[0] and scores.count(scores[best]) == 1:
+        return best, scores
+    return 0, scores
+
+
+def unanimous(current, conflicts, doc_blocks, combine, question):
+    """Checks for the case when the extractor cited no bound that the blocks hold: every bound of the
+    client's kind in the blocks is compared, and an outcome is given only when all of them agree, so that
+    no choice between them matters. The bound shown is the one the client's words point at."""
+    if conflicts:
+        return []
+    own = [v for v in current if v['own']]
+    bounds, seen = [], set()
+    for dimension in sorted({v['dimension'] for v in own}):
+        ids = [v['id'] for v in own if v['dimension'] == dimension]
+        for block in doc_blocks:
+            bound = _block_bound(block, dimension)
+            if bound and _key(bound) not in seen:
+                seen.add(_key(bound))
+                bounds.append(dict(bound, values=ids))
+    checks = [c for c in decide(current, bounds, combine, []) if c.get('relation') != 'equal']
+    if not checks or len({c['verdict'] for c in checks}) != 1 or checks[0]['verdict'] not in (PASS, FAIL):
+        return []
+    best, _ = asked_bound(checks, question, doc_blocks)
+    return [checks[best]]
+
+
+# ---------------------------------------------------------------------------------------------
 # Stage 3: deterministic rule engine
 # ---------------------------------------------------------------------------------------------
+
+def _corrects(text, older):
+    """Whether a turn reads as a correction of earlier values: a correcting word, or "…, не шестьсот" /
+    "а не 600" naming one of the earlier numbers."""
+    if not older:
+        return False
+    if CORRECTION.search(norm(text)):
+        return True
+    earlier = {round(n[0], 9) for v in older for n in bare_numbers(v['text'])}
+    lowered = text.lower().replace('ё', 'е')
+    return any(round(value, 9) in earlier and re.search(r'(?<![а-я])не\s*$', lowered[max(0, start - 6):start])
+               for value, start, _ in bare_numbers(text))
+
 
 def current_values(values, question):
     """Rule A1: one value per object and dimension.
@@ -723,7 +1095,23 @@ def current_values(values, question):
     Returns (values, contradictions).
     """
     texts = {no: text for no, is_user, text in dialogue(question) if is_user}
-    own = [v for v in values if v['own']]
+    own = [dict(v) for v in values if v['own']]
+    if own:
+        last = max(v['turn'] for v in own)
+        for dimension in {v['dimension'] for v in own}:
+            newest = [v for v in own if v['turn'] == last and v['dimension'] == dimension]
+            older = [v for v in own if v['turn'] < last and v['dimension'] == dimension]
+            # One value in a correcting turn against one earlier object: the same object, whatever the
+            # extractor called it ("700 кВт" of the plant, then "по свежему акту 0,82 МВт").
+            if (len({v['object'] for v in newest}) == 1 and len({v['object'] for v in older}) == 1
+                    and _corrects(texts.get(last, ''), older) and not MORE_OBJECTS.search(norm(texts.get(last, '')))):
+                for v in older:
+                    v['object'] = newest[0]['object']
+            # The client does not know which of the values of this turn is right: one object, two values.
+            if len({round(v['value'], 9) for v in newest}) > 1 and DOUBT.search(norm(texts.get(last, ''))):
+                for v in newest:
+                    v['object'] = newest[0]['object']
+                    v['replaced'] = False
     groups = {}
     for v in own:
         groups.setdefault((v['object'], v['dimension']), []).append(v)
@@ -741,7 +1129,7 @@ def current_values(values, question):
             newest = distinct([v for v in newest if not v['replaced']])
         # Earlier turns: a value stands against the latest one unless it was withdrawn, repeats it,
         # or the latest turn reads as a correction.
-        corrected = bool(CORRECTION.search(norm(texts.get(latest, ''))))
+        corrected = _corrects(texts.get(latest, ''), [v for v in group if v['turn'] != latest])
         older = [] if corrected else distinct([v for v in group if v['turn'] != latest and not v['replaced']])
         standing = distinct(newest + older)
         if len(standing) == 1:
@@ -769,6 +1157,12 @@ def _comparable(value, period, dimension, limit):
         return value / 12, 'year_to_month'
     if period == 'month' and limit['period'] == 'year':
         return value * 12, 'month_to_year'
+    if period == 'day' and limit['period'] in DAYS_IN:
+        # A month has 28 to 31 days, a year 365 or 366: compared only when both ends give the same outcome.
+        low, high = (value * days for days in DAYS_IN[limit['period']])
+        if _relation(low, limit) != _relation(high, limit):
+            return None, 'period'
+        return (low + high) / 2, 'day_to_' + limit['period']
     return None, 'period'
 
 
@@ -888,6 +1282,10 @@ def _said(value, limit, number, conversion):
         text += ' (около %s)' % show('energy', number, 'month')
     elif conversion == 'month_to_year':
         text += ' (около %s)' % show('energy', number, 'year')
+    elif conversion.startswith('day_to_'):
+        period = conversion[len('day_to_'):]
+        low, high = (value['value'] * days for days in DAYS_IN[period])
+        text += ' (за %s от %s до %s)' % (PERIOD_WORDS[period], show('energy', low), show('energy', high))
     return text
 
 
@@ -949,7 +1347,8 @@ def _public(result):
     def value(v):
         return {'id': v['id'], 'turn': v['turn'], 'span': [v['start'], v['end']], 'text': v['text'], 'quote': v['quote'],
                 'dimension': v['dimension'], 'value': v['value'], 'period': v['period'], 'object': v['object'],
-                'own': v['own'], 'hearsay': v['hearsay'], 'replaced': v['replaced'], 'unit_inferred': v['unit_inferred'], 'period_inferred': v['period_inferred']}
+                'own': v['own'], 'hearsay': v['hearsay'], 'replaced': v['replaced'], 'unit_inferred': v['unit_inferred'], 'period_inferred': v['period_inferred'],
+                'owner': v.get('owner', '')}
 
     def check(c):
         limit = c['limit']
@@ -957,7 +1356,8 @@ def _public(result):
                 'client': c.get('client'), 'values': [v['id'] for v in c['values']],
                 'limit': {'kind': limit['kind'], 'dimension': limit['dimension'], 'low': limit['low'], 'high': limit['high'],
                           'period': limit['period'], 'text': limit['text'], 'source': limit['source'], 'title': limit['title'],
-                          'sentence': limit.get('sentence', ''), 'block': limit['block'], 'span': [limit['start'], limit['end']], 'next_step': bool(limit.get('step'))}}
+                          'sentence': limit.get('sentence', ''), 'block': limit['block'], 'span': [limit['start'], limit['end']], 'next_step': bool(limit.get('step')),
+                          'asked': bool(limit.get('asked')), 'ladder': bool(limit.get('ladder'))}}
     return {'status': result['status'], 'reason': result.get('reason', ''), 'calls': result.get('calls', 0),
             'values': [value(v) for v in result.get('values', [])], 'checks': [check(c) for c in result.get('checks', [])],
             'rejected': result.get('rejected', []), 'note': result.get('note', '')}
@@ -968,17 +1368,56 @@ def evaluate(data, question, doc_blocks, families):
     log = []
     if not isinstance(data, dict):
         return {'status': NO_CHECK, 'reason': 'extraction is not a JSON object', 'rejected': log}
-    asked = str(data.get('intent') or '').strip().lower() == 'threshold' if 'intent' in data else _truth(data.get('check'))
-    if not asked:
+    intent = str(data.get('intent') or '').strip().lower()
+    asked = intent == 'threshold' if 'intent' in data else _truth(data.get('check'))
+    # By the extractor's own definitions a client who names an own figure and asks whether it is enough asks
+    # about a bound; "claim" and "duration" are for questions without such a figure. Code holds it to that
+    # when the question says so ("можно ли…", "успели?", "дотягиваем?") and, below, when the cited bound
+    # shares a word with the question.
+    override = not asked and intent in ('claim', 'duration') and asks_bound(question)
+    if not asked and not override:
         return {'status': NO_CHECK, 'reason': 'extractor: the last turn does not ask whether a number passes a bound', 'rejected': log}
-    values = validate_values(data, question, families, log)
+    if override:
+        log.append({'intent': intent, 'read_as': 'threshold'})
+    values = settle_ownership(validate_values(data, question, families, log), question, doc_blocks)
     current, conflicts = current_values(values, question)
     limits = validate_limits(data, doc_blocks, current + [v for c in conflicts for v in c['values']], log)
+    lacking = sorted({e['family'] for e in log if e.get('rejected') == 'no client value of this kind'})
+    # An extractor that cited a figure found neither in the dialogue nor in the blocks has invented it:
+    # its reading is not trusted, and code does not fill the gap either.
+    invented = [e['quote'] for e in log if e.get('rejected') == 'fragment is not in a client turn' and bare_numbers(e['quote'])
+                and not any(_locate(e['quote'], b['text']) for b in doc_blocks)]
+    if invented:
+        log.append({'rejected': 'the extractor invented a figure', 'quotes': invented})
+        lacking = []
+    if not data.get('values'):
+        lacking = []  # the extractor marked no client figure at all: nothing to repair
+    added = [v for family in lacking for v in code_values(question, family, doc_blocks, values)]
+    if added:
+        log.append({'read_by_code': [v['text'] for v in added]})
+        values += added
+        current, conflicts = current_values(values, question)
+        again = []
+        limits = validate_limits(data, doc_blocks, current + [v for c in conflicts for v in c['values']], again)
+        log += [e for e in again if e not in log]
+    if override:
+        loose = [l['text'] for l in limits if not tied_to_question(l, doc_blocks, question)]
+        if loose:
+            log.append({'rejected': 'the bound shares no word with the question', 'bounds': loose})
+            limits = [l for l in limits if tied_to_question(l, doc_blocks, question)]
+        if not limits:
+            return {'status': NO_CHECK, 'reason': 'extractor: the last turn does not ask whether a number passes a bound', 'values': values, 'rejected': log}
+    combine = validate_sum(data, doc_blocks, question)
+    fallback = []
+    if not limits and asked and any(e.get('rejected') in ('bound is not in the cited block', 'unknown block') for e in log):
+        fallback = unanimous(current, conflicts, doc_blocks, combine, question)
+        if fallback:
+            log.append({'every_bound_agrees': fallback[0]['verdict']})
     # Completeness: every quantity of a compared kind in the client's last turn must be accounted for
     # by the extractor (as the client's own or as someone else's). A number it skipped may be a second
     # object or a contradicting value, so the comparison is not trusted.
     last_no, last_text = [(no, text) for no, is_user, text in dialogue(question) if is_user][-1]
-    compared = {FAMILY[l['dimension']] for l in limits}
+    compared = {FAMILY[l['dimension']] for l in limits} | {FAMILY[c['limit']['dimension']] for c in fallback}
     skipped = [q['text'] for q in quantities(last_text, client=True) if FAMILY[q['dimension']] in compared
                and not any(v['turn'] == last_no and v['start'] < q['end'] and v['end'] > q['start'] for v in values)]
     if skipped:
@@ -992,16 +1431,34 @@ def evaluate(data, question, doc_blocks, families):
     if doubtful:
         log.append({'rejected': 'whose value this is cannot be confirmed', 'quantities': doubtful})
         return {'status': NO_CHECK, 'reason': 'ownership of a value is unclear', 'values': values, 'rejected': log}
-    limits = with_next_step(limits, doc_blocks)
-    checks = decide(current, limits, validate_sum(data, doc_blocks, question), conflicts)
-    # A value that sits exactly on the bound is usually the bound itself retold by the client; and the
-    # next step is worth a line only when the deciding minimum is reached.
-    on_bound = [c for c in checks if c.get('relation') == 'equal']
-    if on_bound:
-        log.append({'rejected': 'value equals the bound', 'bounds': [c['limit']['text'] for c in on_bound]})
-    checks = [c for c in checks if c.get('relation') != 'equal']
-    if not checks or checks[0]['limit'].get('step') or checks[0]['verdict'] != PASS:
-        checks = [c for c in checks if not c['limit'].get('step')]
+    if fallback:
+        checks = fallback
+    else:
+        limits = with_next_step(limits, doc_blocks)
+        decided = decide(current, limits, combine, conflicts)
+        # A value that sits exactly on the bound is usually the bound itself retold by the client; and the
+        # next step is worth a line only when the deciding minimum is reached.
+        on_bound = [c for c in decided if c.get('relation') == 'equal']
+        if on_bound:
+            log.append({'rejected': 'value equals the bound', 'bounds': [c['limit']['text'] for c in on_bound]})
+        decided = [c for c in decided if c.get('relation') != 'equal']
+        checks = decided
+        if not checks or checks[0]['limit'].get('step') or checks[0]['verdict'] != PASS:
+            checks = [c for c in checks if not c['limit'].get('step')]
+        # Which bound decides: the extractor lists it first, but when the bounds of the scale disagree the
+        # client's words choose ("напрямую, без посредника" points at the step of direct participation).
+        if checks:
+            pool = checks + [c for c in decided if all(c is not k for k in checks)] + \
+                [c for c in decide(current, ladder(limits, doc_blocks), combine, conflicts) if c.get('relation') != 'equal']
+            pool = [c for c in pool if c['limit']['dimension'] == checks[0]['limit']['dimension']]  # bounds of one quantity
+            verdicts = {c['verdict'] for c in pool}
+            if len(verdicts) > 1 and CLARIFY not in verdicts:
+                best, scores = asked_bound(pool, question, doc_blocks)
+                if best:
+                    log.append({'asked_bound': pool[best]['limit']['text'], 'instead_of': pool[0]['limit']['text'],
+                                'scores': dict(zip([c['limit']['text'] for c in pool], scores))})
+                    pool[best]['limit']['asked'] = True
+                    checks = [pool[best]] + [c for c in checks if c is not pool[best] and not c['limit'].get('step')]
     status = overall(checks)
     result = {'status': status, 'values': values, 'checks': checks, 'rejected': log, 'note': note(checks)}
     if status == NO_CHECK:

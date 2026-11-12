@@ -378,7 +378,7 @@ class API:
             parsed={'answer':grounding.parse(plain)['answer'],'mode':None,'evidence':'','formatted':False}
         if not parsed['answer']:raise ValueError('No usable final content')
         check=bool(config.get('GROUNDED_VALIDATE'))
-        issues=grounding.validate(question,parsed,included,registry) if check else []
+        issues=grounding.validate(question,parsed,included,registry,notes) if check else []
         info.update(mode=grounding.MODES.get(parsed['mode']),evidence=parsed['evidence'][:300],
                     issues=[[code,detail if isinstance(detail,str) else list(detail)] for code,detail in issues])
         act=issues if config.get('GROUNDED_SOFT_RETRY') else grounding.hard(issues)
@@ -388,7 +388,7 @@ class API:
             second,second_reason=request(retry)
             candidate=read(second)
             if candidate['answer'] and second_reason in ('stop',None):
-                remaining=grounding.validate(question,candidate,included,registry)
+                remaining=grounding.validate(question,candidate,included,registry,notes)
                 info.update(retry_issues=[code for code,_ in remaining],retry_answer=candidate['answer'][:300])
                 if len(remaining)<len(issues) and len(grounding.hard(remaining))<=len(grounding.hard(issues)):
                     parsed,issues=candidate,remaining;info.update(corrected=True,mode=grounding.MODES.get(parsed['mode']))
@@ -414,7 +414,7 @@ class API:
                 candidate=read(second)
                 info['recheck_mode']=grounding.MODES.get(candidate['mode'])
                 if (candidate['answer'] and second_reason in ('stop',None) and candidate['mode']=='confirmed' and candidate['evidence']
-                        and not grounding.validate(question,candidate,kept,registry)):
+                        and not grounding.validate(question,candidate,kept,registry,notes)):
                     parsed=candidate;info.update(rechecked=True,mode='CONFIRMED',evidence=parsed['evidence'][:300])
         return parsed['answer']
 

@@ -154,6 +154,25 @@ FORMAT_FIRST = '''ФОРМАТ ОТВЕТА — ровно три строки, 
 ''' + _MODES
 
 _FIELD = re.compile(r'(ОСНОВАНИЕ|РЕЖИМ|ОТВЕТ)\s*:\s*', re.I)
+# The markers as the format spells them, in capitals. A dash or a full-width colon instead of the colon,
+# brackets or asterisks around the word, or the English names still mark a service line: none of these
+# may reach the client. A capitalised "Основание:" inside the answer text is not a marker when capital
+# markers are present; without them the case-insensitive colon form above is the fallback.
+_SERVICE = re.compile(r'[\[(*_]*(?<![А-Яа-яЁёA-Za-z])(ОСНОВАНИЕ|РЕЖИМ|ОТВЕТ|EVIDENCE|MODE|ANSWER)(?![А-Яа-яЁёA-Za-z])'
+                      r'[\])*_]*\s*[:：—–-][*_\]]*\s*')
+_ENGLISH = {'EVIDENCE': 'ОСНОВАНИЕ', 'MODE': 'РЕЖИМ', 'ANSWER': 'ОТВЕТ'}
+# What a model may leave between the answer and the service lines: a rule, stray markup, a heading.
+_TAIL = re.compile(r'(?:[\s*_—–-]+|\s*\(?(?i:служебн[а-яё]*(?:\s+строк[а-яё]*)?)\)?\s*:?)+$')
+
+
+def _markers(text):
+    capital = list(_SERVICE.finditer(text))
+    if not capital:
+        return list(_FIELD.finditer(text))
+    first = capital[0].start()
+    # After the first capital marker, a mixed-case one ("Режим: ПОДТВЕРЖДЕНО") is a service line too.
+    extra = [m for m in _FIELD.finditer(text, first) if not any(c.start() <= m.start() < c.end() for c in capital)]
+    return sorted(capital + extra, key=lambda m: m.start())
 
 
 def parse(text):
@@ -162,16 +181,17 @@ def parse(text):
     A completion without the markers is taken as a plain answer (mode unknown)."""
     text = (text or '').strip()
     fields = {}
-    matches = list(_FIELD.finditer(text))
+    matches = _markers(text)
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
-        fields.setdefault(match.group(1).upper(), text[match.end():end].strip())
+        name = match.group(1).upper()
+        fields.setdefault(_ENGLISH.get(name, name), text[match.end():end].strip())
     formatted = bool(fields)
     if fields.get('ОТВЕТ'):
         answer = fields['ОТВЕТ']
     else:
         # No answer marker: the answer is what stands before the service lines.
-        answer = text if not matches else text[:matches[0].start()].strip()
+        answer = text if not matches else _TAIL.sub('', text[:matches[0].start()])
     raw_mode = fields.get('РЕЖИМ', '').upper().replace('Ё', 'Е')
     mode = None
     if re.match(r'\W*(ПОДТВ|CONFIRM)', raw_mode):
@@ -180,7 +200,7 @@ def parse(text):
         mode = 'insufficient'
     elif re.match(r'\W*(НЕОДН|AMBIG)', raw_mode):
         mode = 'ambiguous'
-    evidence = fields.get('ОСНОВАНИЕ', '').strip(' «»"\'')
+    evidence = fields.get('ОСНОВАНИЕ', '').strip(' «»"\'*_')
     if re.fullmatch(r'(?i)нет[.!]?|—|-|', evidence):
         evidence = ''
     return {'answer': answer.strip(), 'mode': mode, 'evidence': evidence, 'formatted': formatted}
@@ -309,11 +329,14 @@ def derivable(value, client, documents):
     return False
 
 
-def ungrounded(answer, question, sources):
+def ungrounded(answer, question, sources, computed=''):
     """Figures and contacts of the answer that occur neither in the documents sent to the model nor in
-    the dialogue (and are not arithmetic on the client's figures). Returns a list of text fragments."""
+    the dialogue (and are not arithmetic on the client's figures). Returns a list of text fragments.
+
+    computed: notes the program itself added to the request (the numeric engine's comparison). Their
+    figures are conversions and sums of the client's and the documents' figures, not inventions."""
     documents_text = '\n'.join(s.get('title', '') + '\n' + s.get('text', '') for s in sources)
-    known_text = documents_text + '\n' + question
+    known_text = documents_text + '\n' + question + ('\n' + computed if computed else '')
     low = known_text.lower().replace('ё', 'е')
     answer_low = answer.lower().replace('ё', 'е')
     issues = []
@@ -328,7 +351,7 @@ def ungrounded(answer, question, sources):
             issues.append(('channel', answer[match.start():match.end()].strip()))
     client = figures(question) | spoken(question)
     documents = figures(documents_text) | spoken(documents_text)
-    known = client | documents
+    known = client | documents | (figures(computed) if computed else set())
     covered = [m.span() for _, p in _HARD for m in re.finditer(p, answer_low)]
     for match in _FIGURE.finditer(answer.replace('−', '-')):
         if any(start <= match.start() < end for start, end in covered):
@@ -406,8 +429,9 @@ _REFUSAL = re.compile(r'^[^.!?]{0,90}(?:нет (?:таких |точных |эт
                       r'не располага|не указан|не описан|к сожалению)', re.I)
 
 
-def validate(question, parsed, sources, registry):
-    """Checks of one parsed completion. Returns a list of (code, detail) issues; empty when clean."""
+def validate(question, parsed, sources, registry, computed=''):
+    """Checks of one parsed completion. Returns a list of (code, detail) issues; empty when clean.
+    computed: notes of the program in the request (see ungrounded)."""
     issues = []
     answer, mode, evidence = parsed['answer'], parsed['mode'], parsed['evidence']
     active, primary = focus(question, sources)
@@ -431,7 +455,7 @@ def validate(question, parsed, sources, registry):
         if alien:
             products = set().union(*(found for _, found in alien))
             issues.append(('other_product', (registry.name(products), registry.name(active))))
-    issues.extend(ungrounded(answer, question, sources))
+    issues.extend(ungrounded(answer, question, sources, computed))
     return issues
 
 

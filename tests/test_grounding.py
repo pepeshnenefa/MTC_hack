@@ -440,6 +440,73 @@ class FlowTests(unittest.TestCase):
         self.assertEqual((answer, len(seen)), ('Адрес офиса: улица Мира, 35.', 1))
 
 
+class ServiceLineTests(unittest.TestCase):
+    """Deviations of the format seen in other models must neither leak the service lines nor cut the answer."""
+    ANSWER = 'Да, подключаем: минимального количества приборов учёта нет.'
+    QUOTE = '«Минимального количества приборов учёта нет.»'
+
+    def parsed(self, tail, answer=None):
+        # The completion arrives cleaned: on one line, without double asterisks (solution.clean_answer).
+        return grounding.parse(solution.clean_answer((answer or self.ANSWER) + '\n' + tail))
+
+    def test_deviant_markers_never_reach_the_client(self):
+        q = self.QUOTE
+        for tail in ('ОСНОВАНИЕ — %s\nРЕЖИМ — ПОДТВЕРЖДЕНО' % q, 'ОСНОВАНИЕ - %s\nРЕЖИМ - ПОДТВЕРЖДЕНО' % q,
+                     '[ОСНОВАНИЕ]: %s\n[РЕЖИМ]: ПОДТВЕРЖДЕНО' % q, 'ОСНОВАНИЕ： %s\nРЕЖИМ： ПОДТВЕРЖДЕНО' % q,
+                     '*ОСНОВАНИЕ:* %s\n*РЕЖИМ:* ПОДТВЕРЖДЕНО' % q, '**ОСНОВАНИЕ:** %s\n**РЕЖИМ:** ПОДТВЕРЖДЕНО' % q,
+                     'EVIDENCE: %s\nMODE: CONFIRMED' % q, '---\nОСНОВАНИЕ: %s\nРЕЖИМ: ПОДТВЕРЖДЕНО' % q,
+                     'Служебные строки:\nОСНОВАНИЕ: %s\nРЕЖИМ: ПОДТВЕРЖДЕНО' % q, 'ОСНОВАНИЕ: %s\nРежим: подтверждено' % q):
+            with self.subTest(tail=tail):
+                parsed = self.parsed(tail)
+                self.assertEqual(parsed['answer'], self.ANSWER)
+                self.assertEqual(parsed['mode'], 'confirmed')
+                self.assertEqual(parsed['evidence'], 'Минимального количества приборов учёта нет.')
+
+    def test_the_word_inside_the_answer_is_not_a_marker(self):
+        tail = 'ОСНОВАНИЕ: %s\nРЕЖИМ: ПОДТВЕРЖДЕНО' % self.QUOTE
+        for answer in ('Да. Основание: договор и акт разграничения. Подать можно онлайн.',
+                       'Режим: круглосуточный сбор показаний доступен.'):
+            with self.subTest(answer=answer):
+                parsed = self.parsed(tail, answer)
+                self.assertEqual((parsed['answer'], parsed['mode']), (answer, 'confirmed'))
+
+    def test_lower_case_markers_without_capitals_still_end_the_answer(self):
+        self.assertEqual(grounding.parse('Да, подключаем. Основание: что-то Режим: подтверждено')['answer'], 'Да, подключаем.')
+
+
+class ComputedNoteTests(unittest.TestCase):
+    """Figures the numeric engine computed and put into the request are not inventions of the model."""
+    QUESTION = 'Пользователь: Потребляем 300 кВт·ч в сутки. Проходим порог?'
+    NOTE = ('ПРОВЕРКА ЧИСЕЛ (служебная пометка, в ответе её не упоминай).\n'
+            '- 300 кВт·ч в сутки (за месяц от 8400 кВт·ч до 9300 кВт·ч) из вопроса — это МЕНЬШЕ, чем 10 тыс. кВт·ч в месяц.')
+    ANSWER = 'Нет, 300 кВт·ч в сутки — это от 8 400 до 9 300 кВт·ч в месяц, меньше порога.'
+
+    def test_note_figures_pass_and_other_figures_are_still_caught(self):
+        self.assertIn('figure', [c for c, _ in grounding.ungrounded(self.ANSWER, self.QUESTION, items())])
+        self.assertEqual(grounding.ungrounded(self.ANSWER, self.QUESTION, items(), self.NOTE), [])
+        invented = self.ANSWER + ' Подключение займёт 17 дней.'
+        self.assertEqual([c for c, _ in grounding.ungrounded(invented, self.QUESTION, items(), self.NOTE)], ['figure'])
+
+    def test_engine_figures_cost_no_correction_and_no_hand_over(self):
+        calls = []
+
+        def transport(request, timeout):
+            calls.append(json.loads(request.data))
+            content = self.ANSWER + '\nОСНОВАНИЕ: НЕТ\nРЕЖИМ: НЕОДНОЗНАЧНО'
+            return io.BytesIO(json.dumps({'choices': [{'message': {'content': content}, 'finish_reason': 'stop'}]}).encode())
+        env = dict(ENV, ET_PROMPT='grounded', ET_GROUNDED_CONTEXT='1', ET_GROUNDED_VALIDATE='2', ET_NUMERIC_ENGINE='1')
+        try:
+            with patch.dict(os.environ, env, clear=True), patch.object(solution, 'urlopen', side_effect=transport), \
+                    patch.object(solution.API, 'numeric_note', return_value=(self.NOTE, {'status': 'FAIL'})):
+                grounding.REGISTRY = registry()
+                answer = solution.API().answer(self.QUESTION, items())
+        finally:
+            config.reload()
+            grounding.REGISTRY = None
+        self.assertEqual((answer, len(calls)), (self.ANSWER, 1))
+        self.assertIn(self.NOTE, calls[0]['messages'][1]['content'])
+
+
 class PackagingTests(unittest.TestCase):
     def test_module_is_packaged_and_holds_no_knowledge_base_figures(self):
         sys.path.insert(0, str(ROOT / 'tools'))

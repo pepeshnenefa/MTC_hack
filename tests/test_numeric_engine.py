@@ -65,8 +65,20 @@ class ParsingTests(unittest.TestCase):
         self.assertEqual(found('с 1 сентября 2026 года лимит до 150 кВт, 25 000 ₽ в год', client=False), [('power', 150.0, None)])
         self.assertEqual(found('с десяти вечера до шести утра, 10 кВ, 70 руб за ватт'), [])
 
+    def test_a_half_is_read_and_a_multiplier_without_its_numeral_is_not(self):
+        self.assertEqual(found('мощность двенадцать с половиной тысяч киловатт'), [('power', 12500.0, None)])
+        self.assertEqual(found('один цех на полмегаватта, второй на пол-киловатта'), [('power', 500.0, None), ('power', 0.5, None)])
+        self.assertEqual(found('около 3 с половиной мегаватт'), [('power', 3500.0, None)])
+        # "тысяч киловатт" has lost its numeral: reading it as 1000 kW turned 12.5 MW into 1 MW.
+        self.assertEqual(found('тысяч киловатт'), [])
+        self.assertEqual(found('млн кВт·ч в год'), [])
+        self.assertEqual(found('около тысячи киловатт'), [('power', 1000.0, None)])
+        self.assertEqual(found('миллион киловатт-часов в год'), [('energy', 1000000.0, 'year')])
+
     def test_client_lists_keep_every_object_in_any_order(self):
         self.assertEqual(found('по документам 300, 280 и 240 киловатт'), [('power', 300.0, None), ('power', 280.0, None), ('power', 240.0, None)])
+        self.assertEqual(found('на 8 и на 7 мегаватт'), [('power', 8000.0, None), ('power', 7000.0, None)])
+        self.assertEqual(found('в 2 и на 7 мегаватт'), [('power', 7000.0, None)])
         # Documents stay strict: a list or range must grow towards the unit.
         self.assertEqual(found('в 2025 и 150 кВт', client=False), [('power', 150.0, None)])
         self.assertEqual(found('от 15 до 500 кВт', client=False), [('power', 15.0, None), ('power', 500.0, None)])
@@ -243,6 +255,24 @@ class AggregationTests(unittest.TestCase):
         self.assertEqual((result['status'], check['client'], len(check['values'])), (ne.PASS, 45.0, 2))
         self.assertTrue(next(v for v in result['values'] if v['id'] == 'v2')['unit_inferred'])
 
+    VOLTAGE_DOCS = [dict(DOCS[0], text=DOCS[0]['text'].replace(
+        'Мощности участков складываются, если они запитаны от одного щита.',
+        'Мощности участков складываются только при электрической связности между ними хотя бы по 0,4 кВ.'))]
+
+    def test_a_link_at_the_rules_voltage_level_is_the_condition_and_a_shared_stem_is_not(self):
+        values = [value('v1', '25 и 20 кВт', object='участки')]
+        linked = run('Два участка, 25 и 20 кВт, между ними наша кабельная перемычка на 0,4 кВ. Пост поставите?',
+                     {'intent': 'threshold', 'values': values, 'limits': self.LIMIT,
+                      'sum': {'mode': 'yes', 'rule_block': 2, 'client_words': 'между ними наша кабельная перемычка на 0,4 кВ'}},
+                     docs=self.VOLTAGE_DOCS)
+        self.assertEqual((linked['status'], linked['checks'][0]['mode'], linked['checks'][0]['client']), (ne.PASS, 'sum', 45.0))
+        # Both sites on 0,4 кВ says nothing about a link between them; "электричество" is not "электрическая связность".
+        for question in ('Два участка, 25 и 20 кВт, оба на 0,4 кВ. Пост поставите?',
+                         'Два участка, 25 и 20 кВт, оба покупают электричество у одного поставщика. Пост поставите?'):
+            doubt = run(question, {'intent': 'threshold', 'values': values, 'limits': self.LIMIT,
+                                   'sum': {'mode': 'yes', 'rule_block': 2, 'client_words': 'оба'}}, docs=self.VOLTAGE_DOCS)
+            self.assertEqual((doubt['status'], doubt['checks'][0]['reason']), (ne.CLARIFY, 'aggregation'), question)
+
 
 class CorrectionTests(unittest.TestCase):
     LIMIT = [{'block': 1, 'quote': 'от 40 кВт', 'kind': 'min'}]
@@ -265,6 +295,37 @@ class CorrectionTests(unittest.TestCase):
         values = [value('v1', 'не шестьсот, а четыреста пятьдесят киловатт', turn=3, replaced=True), value('v2', 'киловатт на шестьсот', turn=1)]
         result = run(dialog, {'intent': 'threshold', 'values': values, 'limits': [{'block': 3, 'quote': 'от 15 до 500 кВт', 'kind': 'range'}]})
         self.assertEqual((result['status'], result['checks'][0]['client']), (ne.PASS, 450.0))
+
+    def test_corrections_without_the_usual_words_and_with_another_object_name(self):
+        # "старую цифру назвал … по свежему акту": the extractor named the objects differently, it is one object.
+        dialog = ('Пользователь: У нас участок, мощность 60 кВт.\nАссистент: Тогда пост ставим.\n'
+                  'Пользователь: Подождите, я старую цифру назвал. По свежему акту у нас 0,035 МВт. Тогда что?')
+        values = [value('v1', 'мощность 60 кВт', turn=1, object='участок'), value('v2', 'по свежему акту у нас 0,035 МВт', turn=3, object='по свежему акту')]
+        result = run(dialog, {'intent': 'threshold', 'values': values, 'limits': self.LIMIT})
+        self.assertEqual((result['status'], result['checks'][0]['client'], result['checks'][0]['mode']), (ne.FAIL, 35.0, 'single'))
+        # "пересчитал … , не шестьдесят" and a bare "не 60" both withdraw the earlier number.
+        for last in ('Инженер пересчитал: реально выйдет тридцать пять киловатт, не шестьдесят. Проходим?',
+                     'Реально будет 35 кВт, не 60. Проходим?'):
+            dialog = 'Пользователь: У нас участок 60 кВт.\nАссистент: Пост ставим.\nПользователь: ' + last
+            quote = 'тридцать пять киловатт' if 'тридцать' in last else '35 кВт'
+            again = run(dialog, {'intent': 'threshold', 'values': [value('v1', '60 кВт', turn=1), value('v2', quote, turn=3)], 'limits': self.LIMIT})
+            self.assertEqual((again['status'], again['checks'][0]['client']), (ne.FAIL, 35.0), last)
+        # Two objects of one turn with a correcting word stay two objects.
+        dialog = 'Пользователь: Участок 30 кВт.\nАссистент: Мало.\nПользователь: Уточню: участков два, второй 20 кВт, оба от одного щита. Теперь?'
+        two = run(dialog, {'intent': 'threshold', 'values': [value('v1', '30 кВт', turn=1, object='участок 1'),
+                                                               value('v2', 'второй 20 кВт', turn=3, object='участок 2')],
+                           'limits': self.LIMIT, 'sum': {'mode': 'yes', 'rule_block': 2}})
+        self.assertEqual((two['status'], two['checks'][0]['mode'], two['checks'][0]['client']), (ne.PASS, 'sum', 50.0))
+
+    def test_a_number_without_unit_is_kept_and_doubt_makes_values_alternatives(self):
+        question = ('Пользователь: Хотим пост.\nАссистент: Какая мощность?\n'
+                    'Пользователь: Тут путаница: в расчёте проектировщика 30 кВт, а в письме подрядчика — 50. Какая цифра правильная, не знаю. Поставите?')
+        values = [value('v1', 'в расчёте проектировщика 30 кВт', turn=3, object='расчёт проектировщика'),
+                  value('v2', 'в письме подрядчика — 50', turn=3, object='письмо подрядчика')]
+        result = run(question, {'intent': 'threshold', 'values': values, 'limits': self.LIMIT})
+        self.assertEqual((result['status'], result['checks'][0]['reason']), (ne.CLARIFY, 'contradiction'))
+        self.assertIn('(30 кВт и 50 кВт)', result['note'])
+        self.assertTrue(next(v for v in result['values'] if v['id'] == 'v2')['unit_inferred'])
 
     def test_contradictory_values_need_clarification(self):
         one = 'По договору 60 кВт, а в акте стоит 35 кВт. Проходим?'
@@ -298,7 +359,9 @@ class ValidationTests(unittest.TestCase):
             'a quantity of the last turn was skipped': {'check': True, 'values': [value('v1', '30 кВт')], 'limits': good_limit, 'question': 'У нас участок на 30 кВт, хотя по паспорту 55 кВт. Пост поставите?'},
             'bound of another kind': {'check': True, 'values': good_value, 'limits': [{'block': 1, 'quote': 'складываются', 'kind': 'min'}]},
             'no values': {'check': True, 'values': [], 'limits': good_limit},
-            'only a foreign value': {'check': True, 'values': [value('v1', '30 кВт', own=False)], 'limits': good_limit},
+            # The extractor calls it someone else's and the sentence is about someone else.
+            'only a foreign value': {'check': True, 'values': [value('v1', '30 кВт', own=False)], 'limits': good_limit,
+                                     'question': 'У соседей участок на 30 кВт. Нам пост поставите?'},
         }
         examples = DOCS + [{'source': 'c.md', 'heading': 'Примеры', 'title': 'Склад / Примеры', 'text': 'Пример: станция 100 кВт окупилась.'}]
         for name, extraction in cases.items():
@@ -312,7 +375,8 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual((heard['status'], heard['values'][0]['hearsay']), (ne.NO_CHECK, True))
         # "Not the client's" without reported speech next to it may be a second value of the client: no verdict.
         unclear = run('У нас участок на 30 кВт, а в акте стоит 55 кВт. Пост поставите?',
-                      {'intent': 'threshold', 'values': [value('v1', '30 кВт'), value('v2', '55 кВт', own=False)], 'limits': good_limit})
+                      {'intent': 'threshold', 'values': [value('v1', '30 кВт', object='участок'), value('v2', '55 кВт', own=False, object='акт')],
+                       'limits': good_limit})
         self.assertEqual((unclear['status'], unclear['reason']), (ne.NO_CHECK, 'ownership of a value is unclear'))
         self.assertFalse(run('По договору у нас 30 кВт. Пост поставите?', {'intent': 'threshold', 'values': good_value, 'limits': good_limit})['values'][0]['hearsay'])
         for raw in ('не JSON', '', '[1, 2]', '{"check": true', None):
@@ -341,6 +405,99 @@ class ValidationTests(unittest.TestCase):
         for figure in ('750', '670', '2675', 'оптов', 'солнеч', 'руб'):
             self.assertFalse(figure in code, figure)
         self.assertNotIn('клиент', ne.HEADER.lower())  # that word made the model answer in the third person
+
+
+# A scale of steps split over two sections, as documents often state it.
+LADDER = [
+    {'source': 'p.md', 'heading': 'Не подходит', 'title': 'Пост / Не подходит, если', 'text': '- Мощность участка ниже 40 кВт.'},
+    {'source': 'q.md', 'heading': 'Ступени', 'title': 'Пороги / Ступени', 'text':
+        '- Ниже 40 кВт пост не ставим.\n'
+        '- От 40 кВт, но менее 2 МВт пост ставим через подрядчика, напрямую поставить не можем.\n'
+        '- От 2 МВт возможна прямая установка нашей бригадой.'},
+]
+FIRST_STEP = [{'block': 1, 'quote': 'ниже 40 кВт', 'kind': 'min', 'values': ['v1']}]
+
+
+class StepAndSilenceTests(unittest.TestCase):
+    """Rules added after holdout-v4: which step the client asks about, and figures the extractor left out."""
+
+    def test_the_clients_words_choose_the_step_of_the_scale(self):
+        # Only the lowest step is cited; the scale is completed from the other section and the client's
+        # "напрямую, без подрядчика" points at the top step.
+        asked = run('У нас участок 0,5 МВт. Хотим, чтобы поставили напрямую, без подрядчика. Так можно?',
+                    {'intent': 'threshold', 'values': [value('v1', '0,5 МВт')], 'limits': FIRST_STEP}, docs=LADDER)
+        self.assertEqual((asked['status'], [(c['limit']['low'], c['verdict'], c['limit']['asked']) for c in asked['checks']]),
+                         (ne.FAIL, [(2000.0, ne.FAIL, True), (40.0, ne.PASS, False)]))
+        self.assertTrue(asked['note'].split('\n')[1].startswith('- 500 кВт из вопроса — это МЕНЬШЕ, чем 2 МВт'))
+        # Words that point at no step leave the extractor's order.
+        plain = run('У нас участок 0,5 МВт. Подходим?', {'intent': 'threshold', 'values': [value('v1', '0,5 МВт')], 'limits': FIRST_STEP}, docs=LADDER)
+        self.assertEqual((plain['status'], [c['limit']['low'] for c in plain['checks']]), (ne.PASS, [40.0]))
+
+    def test_a_scale_joins_neighbouring_steps_only(self):
+        blocks = ne.blocks([{'source': 's.md', 'title': 'Станция / Отдача', 'text': 'Отдавать в сеть можно до 150 кВт, раньше лимит был 15 кВт.'},
+                            {'source': 's.md', 'title': 'Станция / Типовой', 'text': 'Типовой проект — от 15 до 500 кВт.'}], {'power'})
+        cap = {'kind': 'max', 'dimension': 'power', 'low': 150.0, 'high': 150.0, 'period': None, 'values': ['v1']}
+        self.assertEqual(ne.ladder([cap], blocks), [])  # "15 … 150" overlaps the cap, "15–500" does not touch it
+        steps = ne.ladder([{'kind': 'min', 'dimension': 'power', 'low': 40.0, 'high': 40.0, 'period': None, 'values': ['v1']}],
+                          ne.blocks(LADDER, {'power'}))
+        self.assertEqual(sorted((l['kind'], l['low'], l['high']) for l in steps), [('min', 2000.0, 2000.0), ('range', 40.0, 2000.0)])
+
+    def test_a_claim_or_duration_with_the_clients_figure_and_a_question_about_it_is_checked(self):
+        no = block_no(DOCS, 'Рассрочка', {'duration'})
+        limit = [{'block': no, 'quote': 'до 5 лет', 'kind': 'max'}]
+        asked = run('Финдиректор спрашивает: можно ли растянуть рассрочку на 84 месяца?',
+                    {'intent': 'duration', 'values': [value('v1', 'на 84 месяца')], 'limits': limit})
+        self.assertEqual(asked['status'], ne.FAIL)
+        # No question about the figure, or a bound that shares no word with the question: no verdict.
+        for question in ('Рассрочку на 84 месяца оформите быстро?', 'Нам 84 месяца можно?'):
+            self.assertEqual(run(question, {'intent': 'duration', 'values': [value('v1', '84 месяца')], 'limits': limit})['status'], ne.NO_CHECK, question)
+
+    def test_a_relayed_figure_of_the_client_is_the_clients_and_a_relayed_bound_is_not(self):
+        limit = [{'block': 1, 'quote': 'от 40 кВт', 'kind': 'min'}]
+        relayed = run('Главный энергетик говорит, что мощность у нас 30 кВт. Пост поставите?',
+                      {'intent': 'threshold', 'values': [value('v1', '30 кВт')], 'limits': limit})
+        self.assertEqual((relayed['status'], relayed['values'][0]['hearsay']), (ne.FAIL, False))
+        text = 'Энергетик говорит, что у нас пост ставят только от 25 кВт.'
+        self.assertTrue(ne._reported(text, text.find('25')))
+        # Two figures the extractor gave one object name: the client named two values of it.
+        two = run('Энергетик говорит, что мощность у нас 30 кВт, а директор уверен, что 0,05 МВт. Пост поставите?',
+                  {'intent': 'threshold', 'values': [value('v1', '30 кВт', object='мощность'), value('v2', '0,05 МВт', own=False, object='мощность')],
+                   'limits': limit})
+        self.assertEqual((two['status'], two['checks'][0]['reason']), (ne.CLARIFY, 'contradiction'))
+        # The only figure of its kind, the client speaks of themselves: the extractor's "foreign" is overruled.
+        days = run('Мы отнесли заявку за двенадцать рабочих дней до начала периода. Успели?',
+                   {'intent': 'threshold', 'values': [value('v1', 'за двенадцать рабочих дней', own=False)],
+                    'limits': [{'block': block_no(DOCS, 'рабочих', {'duration'}), 'quote': 'не позднее чем за 10 рабочих дней', 'kind': 'min'}]})
+        self.assertEqual((days['status'], days['values'][0]['owner']), (ne.PASS, 'only value'))
+        self.assertIsNone(ne.CORRECTION.search('по договору у нас 800 квт'))  # "договор" is not "оговорился"
+        self.assertTrue(ne.CORRECTION.search('я оговорился'))
+
+    def test_code_reads_the_clients_figure_the_extractor_left_out(self):
+        no = block_no(DOCS, 'Архив', {'duration'})
+        limit = [{'block': no, 'quote': 'не менее года', 'kind': 'min'}]
+        dialog = ('Пользователь: Архив у нас за восемнадцать месяцев.\nАссистент: Этого хватит.\n'
+                  'Пользователь: Я погорячился: айтишники говорят, данные есть всего за восемь месяцев. Хватит?')
+        read = run(dialog, {'intent': 'threshold', 'values': [value('v1', 'Хватит', turn=3)], 'limits': limit})
+        self.assertEqual((read['status'], read['checks'][0]['client'], read['values'][-1]['owner']), (ne.FAIL, 8.0, 'code'))
+        # Without the correction the figure is someone else's statement and is not read.
+        hearsay = dialog.replace('Я погорячился: айтишники', 'Айтишники')
+        self.assertEqual(run(hearsay, {'intent': 'threshold', 'values': [value('v1', 'Хватит', turn=3)], 'limits': limit})['status'], ne.NO_CHECK)
+
+    def test_daily_consumption_is_compared_with_a_monthly_bound_only_when_every_month_length_agrees(self):
+        limit = [{'block': block_no(DOCS, 'Ориентир', {'energy'}), 'quote': 'от 1 000 000 кВт·ч в месяц', 'kind': 'min'}]
+        high = run('В сутки уходит тысяч сорок киловатт-часов. Дотягиваем?',
+                   {'intent': 'threshold', 'values': [value('v1', 'тысяч сорок киловатт-часов')], 'limits': limit})
+        self.assertEqual(high['status'], ne.PASS)
+        self.assertIn('40 тыс. кВт·ч в сутки (за месяц от 1,12 млн кВт·ч до 1,24 млн кВт·ч) из вопроса — это БОЛЬШЕ', high['note'])
+        edge = run('В сутки уходит 34 000 кВт·ч. Дотягиваем?', {'intent': 'threshold', 'values': [value('v1', '34 000 кВт·ч')], 'limits': limit})
+        self.assertEqual((edge['status'], edge['checks'][0]['reason']), (ne.CLARIFY, 'period'))
+
+    def test_without_a_valid_citation_a_verdict_needs_every_bound_to_agree(self):
+        cited = [{'block': block_no(DOCS, 'складываются', {'power'}), 'quote': 'Мощности участков складываются', 'kind': 'min'}]
+        low = run('У нас участок на 10 кВт. Пост поставите?', {'intent': 'threshold', 'values': [value('v1', '10 кВт')], 'limits': cited})
+        self.assertEqual(low['status'], ne.FAIL)  # below "от 40 кВт, но менее 2 МВт" and below "от 15 до 500 кВт"
+        split = run('У нас участок на 30 кВт. Пост поставите?', {'intent': 'threshold', 'values': [value('v1', '30 кВт')], 'limits': cited})
+        self.assertEqual((split['status'], split['note']), (ne.NO_CHECK, ''))  # one bound passes, the other does not
 
 
 class IntegrationTests(unittest.TestCase):
