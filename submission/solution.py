@@ -26,6 +26,8 @@ import config
 from retrieval import tokens, query, chunks, Search, turns
 from context import pack_context
 import checks
+import numeric_engine
+import grounding
 from hybrid import prepare as prepare_hybrid
 from hierarchy import HierarchicalSearch
 
@@ -137,20 +139,40 @@ CHECKS_V4='''ПЕРЕД ОТВЕТОМ ПРОВЕРЬ:
 4. Есть ли ответ. Если того, о чём спрашивает клиент, в документах нет (прогноз, цена неописанного варианта, услуги вне Energytool), скажи это первым предложением. Не обещай дать эти сведения позже и не проси данные «для точного ответа», если в документах не сказано, что такую оценку делают. Не называй сайты, отделы и контакты, которых нет в документах. Если ответ в документах есть — отвечай по существу, а не отказывай.'''
 SYSTEM_V4=SYSTEM_FULL+'\n\n'+CHECKS_V4
 
+# grounded = the context-v1 instruction, unchanged, plus the evidence-first format: the model quotes
+# the sentence its answer rests on and names one of three modes before it writes the answer
+# (docs/grounded-v1.md). The client receives the third line only.
+SYSTEM_GROUNDED=SYSTEM_FULL+'\n\n'+grounding.FORMAT
+SYSTEM_GROUNDED_FIRST=SYSTEM_FULL+'\n\n'+grounding.FORMAT_FIRST
+FORMAT_REMINDER='После ответа добавь строки ОСНОВАНИЕ и РЕЖИМ.'
+FORMAT_REMINDER_FIRST='Ответь тремя строками: ОСНОВАНИЕ, РЕЖИМ, ОТВЕТ.'
+GROUNDED=('grounded','grounded_first')
+
 def system_prompt():
     variant=config.get('PROMPT')
     if variant=='full':return SYSTEM_FULL
+    if variant=='grounded':return SYSTEM_GROUNDED
+    if variant=='grounded_first':return SYSTEM_GROUNDED_FIRST
     if variant=='v4':return SYSTEM_V4
     if variant=='v3':return SYSTEM_V3
     base,examples=(SYSTEM_V2,EXAMPLES_V2) if variant=='v2' else (SYSTEM,EXAMPLES)
     return base+('\n\n'+examples if config.get('USE_EXAMPLES') else '')
 
-def user_message(question,context,notes=''):
+def payload_context(payload):
+    """The documents block of a request built by user_message."""
+    content=payload['messages'][1]['content']
+    start=len('ДОКУМЕНТЫ:\n');end=content.find('\n\nДИАЛОГ ИЛИ ВОПРОС:\n')
+    if end<0:end=max(content.find('\n\nИСТОРИЯ ДИАЛОГА'),content.find('\n\nВОПРОС КЛИЕНТА:\n'))
+    return content[start:end] if end>=0 else content[start:]
+
+def user_message(question,context,notes='',plain=False):
     """Documents first, then the dialogue; the last client turn is what must be answered.
-    notes: deterministic checks (checks.py) placed right after the dialogue."""
-    variant=config.get('PROMPT')
+    notes: deterministic checks (checks.py) placed right after the dialogue.
+    plain: the request of the base instruction (no format reminder)."""
+    variant='full' if plain else config.get('PROMPT')
     reminder='\n\n'+notes if notes else ''
-    if config.get('USE_REMINDER') and variant not in ('full','v3','v4'):
+    if variant in GROUNDED:reminder+='\n\n'+(FORMAT_REMINDER if variant=='grounded' else FORMAT_REMINDER_FIRST)
+    elif config.get('USE_REMINDER') and variant not in ('full','v3','v4'):
         reminder+='\n\n'+(REMINDER_V2 if variant=='v2' else REMINDER)
     if config.get('DIALOG_FORMAT')!='structured':
         return 'ДОКУМЕНТЫ:\n'+context+'\n\nДИАЛОГ ИЛИ ВОПРОС:\n'+question+reminder
@@ -211,8 +233,8 @@ class API:
         self.reranker_top_n=setting('RERANKER_TOP_N',6,1,100)
         if config.get('USE_RERANKER') and not self.reranker:
             raise ValueError('Missing RERANKER_MODEL')
-    def post(self,endpoint,body):
-        attempts=getattr(self,'max_attempts',int(config.get('MAX_ATTEMPTS')))
+    def post(self,endpoint,body,attempts=None):
+        attempts=attempts or getattr(self,'max_attempts',int(config.get('MAX_ATTEMPTS')))
         for attempt in range(attempts):
             remaining=self.deadline-time.monotonic() if self.deadline is not None else 90
             if remaining <= 1:raise TimeoutError('Request deadline')
@@ -228,6 +250,28 @@ class API:
             if self.deadline is not None and time.monotonic()+pause+1 >= self.deadline:
                 raise TimeoutError('Retry deadline')
             time.sleep(pause)
+    def numeric_note(self,question,sources):
+        """Numeric validation engine (numeric_engine.py), off by default. Returns (note, record).
+        One extra model call that only extracts; the comparison itself is done by code. Any failure
+        or doubt leaves the note empty, and the request is then exactly what it is without the engine."""
+        if not config.get('NUMERIC_ENGINE'):return '',None
+        if self.deadline is not None and self.deadline-time.monotonic()<config.get('NUMERIC_ENGINE_MIN_SECONDS'):
+            print(json.dumps({'event':'numeric_engine_skipped','reason':'time'}),file=sys.stderr)
+            return '',{'status':numeric_engine.NO_CHECK,'reason':'skipped: run time is short'}
+        def extract(messages):
+            body={'model':self.model,'temperature':0,'max_tokens':min(self.max_tokens,int(config.get('NUMERIC_ENGINE_TOKENS'))),'messages':messages}
+            return self.post('/chat/completions',body,attempts=2)['choices'][0]['message'].get('content')
+        began=time.monotonic()
+        try:
+            record=numeric_engine.run(question,sources,extract)
+            record['seconds']=round(time.monotonic()-began,1)
+        except HTTPError as exc:
+            if exc.code in (401,403):raise
+            print('Numeric engine unavailable: HTTPError',file=sys.stderr);return '',None
+        except Exception as exc:
+            # The engine is an aid; its failure must never cost the answer.
+            print('Numeric engine unavailable: '+type(exc).__name__,file=sys.stderr);return '',None
+        return record.get('note',''),record
     def answer(self,question,sources):
         if config.get('USE_RERANKER') and sources:
             try:
@@ -244,6 +288,8 @@ class API:
         except Exception as exc:
             # A check is an aid; its failure must never cost the answer.
             notes='';print('Checks unavailable: '+type(exc).__name__,file=sys.stderr)
+        engine_note,engine=self.numeric_note(question,report['included'])
+        if engine_note:notes=(notes+'\n\n' if notes else '')+engine_note
         payload={'model':self.model,'temperature':self.temperature,'max_tokens':self.max_tokens,'messages':[{'role':'system','content':system_prompt()},{'role':'user','content':user_message(question,context,notes)}]}
         thinking=config.get('THINKING')
         if thinking in ('on','off') and not API.template_arguments_rejected:
@@ -270,7 +316,7 @@ class API:
                 return '','http'
             except (KeyError,IndexError,TypeError,AttributeError,ValueError)+TRANSIENT:
                 return '','malformed'
-        started=time.monotonic();calls=[0]
+        started=time.monotonic();calls=[0];info={}
         def finish(text):
             # Optional local debugging trace (sources, sizes, timing); never enabled by the platform.
             path=env('TRACE_FILE')
@@ -278,7 +324,7 @@ class API:
                 try:
                     with open(path,'a',encoding='utf-8') as stream:
                         stream.write(json.dumps({'question':question,'answer':text,'calls':calls[0],
-                            'seconds':round(time.monotonic()-started,1),'context_chars':len(context),'notes':notes,
+                            'seconds':round(time.monotonic()-started,1),'context_chars':len(context),'notes':notes,'numeric':engine,'grounding':info,
                             'sources':[s['source'].split('/')[-1]+' / '+s.get('title',s['heading'])+' ['+str(len(s['text']))+']' for s in report['included']]},ensure_ascii=False)+'\n')
                 except OSError:pass
             return text
@@ -301,11 +347,76 @@ class API:
                 recovered,recovered_reason=request(retry)
                 complete=recovered and recovered_reason in ('stop',None)
                 if complete and (not original or reason=='length' or len(recovered.split())<len(original.split())):
-                    return finish(recovered)
+                    original=recovered
             except Exception as exc:
                 print('Recovery failed: '+type(exc).__name__,file=sys.stderr)
-        if original:return finish(original)
-        raise ValueError('No usable final content')
+        if not original:raise ValueError('No usable final content')
+        formatted=config.get('PROMPT') in GROUNDED
+        if not formatted and not config.get('GROUNDED_VALIDATE'):return finish(original)
+        try:
+            return finish(self.grounded(question,sources,report,payload,original,request,getattr(self,'search',None),notes,info))
+        except Exception as exc:
+            # Grounding is an aid: its failure must never cost the answer or leak the service lines.
+            print('Grounding unavailable: '+type(exc).__name__,file=sys.stderr)
+            info['error']=type(exc).__name__
+            plain=grounding.parse(original)['answer'] if formatted else original
+            if plain:return finish(plain)
+            raise ValueError('No usable final content')
+    def grounded(self,question,sources,report,payload,text,request,search,notes,info):
+        """Evidence check of one completion (grounding.py): parse, validate, at most one corrective call."""
+        formatted=config.get('PROMPT') in GROUNDED
+        included=report['included']
+        registry=grounding.REGISTRY or grounding.Registry(included)
+        left=lambda:self.deadline-time.monotonic() if self.deadline is not None else 60
+        read=lambda raw:grounding.parse(raw) if formatted else {'answer':raw,'mode':None,'evidence':'','formatted':False}
+        parsed=read(text)
+        if not parsed['answer'] and left()>=12:
+            # The format swallowed the answer: one plain completion with the unchanged base instruction.
+            info['plain_fallback']=True
+            plain,_=request(dict(payload,messages=[{'role':'system','content':SYSTEM_FULL},
+                                                   {'role':'user','content':user_message(question,payload_context(payload),notes,plain=True)}]))
+            parsed={'answer':grounding.parse(plain)['answer'],'mode':None,'evidence':'','formatted':False}
+        if not parsed['answer']:raise ValueError('No usable final content')
+        check=bool(config.get('GROUNDED_VALIDATE'))
+        issues=grounding.validate(question,parsed,included,registry) if check else []
+        info.update(mode=grounding.MODES.get(parsed['mode']),evidence=parsed['evidence'][:300],
+                    issues=[[code,detail if isinstance(detail,str) else list(detail)] for code,detail in issues])
+        act=issues if config.get('GROUNDED_SOFT_RETRY') else grounding.hard(issues)
+        if act and left()>=12:
+            retry=dict(payload,messages=payload['messages']+[{'role':'assistant','content':text},
+                                                             {'role':'user','content':grounding.feedback(issues,formatted)}])
+            second,second_reason=request(retry)
+            candidate=read(second)
+            if candidate['answer'] and second_reason in ('stop',None):
+                remaining=grounding.validate(question,candidate,included,registry)
+                info.update(retry_issues=[code for code,_ in remaining],retry_answer=candidate['answer'][:300])
+                if len(remaining)<len(issues) and len(grounding.hard(remaining))<=len(grounding.hard(issues)):
+                    parsed,issues=candidate,remaining;info.update(corrected=True,mode=grounding.MODES.get(parsed['mode']))
+            if int(config.get('GROUNDED_VALIDATE'))>=2:
+                # Still resting on another product's facts or on invented figures and contacts after the
+                # correction: no guesses reach the client, the question goes to a specialist.
+                handoff=grounding.handoff(issues)
+                if handoff:
+                    info.update(handoff=True,mode='INSUFFICIENT',replaced=parsed['answer'][:300])
+                    return handoff
+        elif config.get('GROUNDED_RECHECK') and parsed['mode']=='insufficient' and not parsed['evidence'] and left()>=12:
+            # "Not found" is not yet "not in the base": one more look at other sections. A refusal that
+            # quotes what the known fact refers to has found its section already and is left alone.
+            extra=grounding.second_look(sources,included,search,question,max(1,min(100,int(config.get('TOP_K')))))
+            if extra:
+                wider=included[:int(config.get('PRIMARY'))]+extra
+                budget=int(config.get('CONTEXT_CHARS'));parts=[grounding.NOTE];kept=[]
+                for source,entry in zip(wider,grounding.render(wider,registry)):
+                    if sum(len(p)+2 for p in parts)+len(entry)>budget:continue
+                    parts.append(entry);kept.append(source)
+                second,second_reason=request(dict(payload,messages=[payload['messages'][0],
+                    {'role':'user','content':user_message(question,'\n\n'.join(parts),notes)}]))
+                candidate=read(second)
+                info['recheck_mode']=grounding.MODES.get(candidate['mode'])
+                if (candidate['answer'] and second_reason in ('stop',None) and candidate['mode']=='confirmed' and candidate['evidence']
+                        and not grounding.validate(question,candidate,kept,registry)):
+                    parsed=candidate;info.update(rechecked=True,mode='CONFIRMED',evidence=parsed['evidence'][:300])
+        return parsed['answer']
 
 def locate(names):
     data_dir=Path(env('DATA_DIR',default='data'))
@@ -362,6 +473,8 @@ def main():
     kb_documents=documents(kb)
     search=HierarchicalSearch(kb_documents) if config.get('USE_HIERARCHY') else Search(chunks(kb_documents))
     if not search.items:raise ValueError('Empty knowledge base')
+    try:grounding.REGISTRY=grounding.Registry(search.items)  # product names for the section tags
+    except Exception as exc:print('Registry unavailable: '+type(exc).__name__,file=sys.stderr)
     if args.validate_only:
         print(json.dumps({'questions':len(rows),'sections':len(search.items),'valid':True}));return
     if args.retrieval_report:
@@ -382,6 +495,7 @@ def main():
                 embedding_api=API(deadline=embedding_deadline)
                 search=prepare_hybrid(search,[r['question'] for r in rows],embedding_api,
                                       env('EMB_MODEL',default='baai/bge-m3'),embedding_deadline,anchor_k=top_k,workers=workers)
+        api.search=search  # the second look of the grounded flow searches again (grounding.second_look)
         answers, errors=run_batch(rows, lambda question: api.answer(question,search.find(question,k=min(100,max(36,top_k*3)))),
                                   workers, deadline=deadline,
                                   checkpoint=lambda answers:write_answers(args.output,rows,answers))

@@ -52,11 +52,22 @@ DEFAULTS = {
     'USE_RERANKER': 0,
     'USE_CORRECTIONS': 0,      # corrections-v1: client's explicit corrections rewrite the search view
     # --- generation (solution.py) ---
-    'PROMPT': 'full',         # 'full' = context-v1 instruction, 'short' = prompt-v1, 'v2' = prompt-v1 with question/example edits, 'v3' = 'full' with form edits, 'v4' = 'full' plus four checks against critical errors
+    'PROMPT': 'full',         # 'full' = context-v1 instruction, 'short' = prompt-v1, 'v2' = prompt-v1 with question/example edits, 'v3' = 'full' with form edits, 'v4' = 'full' plus four checks against critical errors, 'grounded' = 'full' plus two service lines after the answer: the quoted evidence and one of three confidence modes (grounding.py); 'grounded_first' = the same with the evidence before the answer
+    'GROUNDED_CONTEXT': 0,     # 1 = a product tag before every section; sections of other products limited to OFF_PRODUCT_MAX
+    'OFF_PRODUCT_MAX': 2,      # sections of other products kept in the context when the product in question is known
+    'GROUNDED_VALIDATE': 0,    # 1 = check the answer (figures, contacts; the quoted evidence when PROMPT=grounded) and regenerate once on a failed check; 2 = also replace an answer that still fails a hard check by a hand-over to a specialist
+    'GROUNDED_SOFT_RETRY': 0,  # 1 = regenerate also on findings code cannot be sure of (inexact quote, missing mode)
+    'GROUNDED_RECHECK': 0,     # 1 = when the model reports "no data", look once more at other sections before handing over to a specialist
     'NUMBER_CHECK': 0,         # 1 = add the arithmetic comparison of the client's quantities with document quantities (checks.py)
     'NUMBER_CHECK_SCOPE': 'dialog',  # 'dialog' = latest client turn naming each quantity; 'last' = quantities of the last client turn only
     'NUMBER_CHECK_VALUES': 3,  # nearest document values listed on each side of the client's quantity
     'ASSISTANT_CHECK': 0,      # 1 = when the dialogue has assistant turns, remind to verify them against the documents
+    'NUMERIC_ENGINE': 0,       # 1 = numeric validation engine (numeric_engine.py): extraction call -> validation -> comparison by code -> verdict note
+    'NUMERIC_ENGINE_SCOPE': 'last',  # 'last' = started by a quantity in the last client turn; 'dialog' = by a quantity in any client turn
+    'NUMERIC_ENGINE_BLOCKS': 14,     # document blocks with bounds shown to the extraction call
+    'NUMERIC_ENGINE_CHARS': 4500,    # their total size
+    'NUMERIC_ENGINE_TOKENS': 700,    # completion budget of the extraction call
+    'NUMERIC_ENGINE_MIN_SECONDS': 240,  # skip the engine when less run time than this is left
     'USE_EXAMPLES': 1,         # few-shot form examples inside the system prompt
     'USE_REMINDER': 1,         # form reminder after the documents
     'DIALOG_FORMAT': 'raw',    # 'raw' = dialogue as received; 'structured' = history and the last client turn separated

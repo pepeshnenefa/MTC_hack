@@ -26,6 +26,9 @@ SETS = {
     'holdout': ROOT / 'tests/evaluation/holdout-v1/questions.csv',
     'holdout2': ROOT / 'tests/evaluation/holdout-v2/questions.csv',
     'holdout3': ROOT / 'tests/evaluation/holdout-v3/questions.csv',
+    'holdout4': ROOT / 'tests/evaluation/holdout-v4/questions.csv',
+    'grounded1': ROOT / 'tests/evaluation/grounded-holdout-v1/questions.csv',
+    'numreg': ROOT / 'tests/evaluation/numeric-regression-v1/questions.csv',
 }
 PASS_THROUGH = ('PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL')
 
