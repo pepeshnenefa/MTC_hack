@@ -19,7 +19,7 @@ def check(archive, questions, kb, output):
         root=Path(temp)
         with zipfile.ZipFile(archive) as package:
             names=package.namelist()
-            expected={'solution.py','batch_io.py','config.py','retrieval.py','context.py','corrections.py','hybrid.py','hierarchy.py','requirements.txt'}
+            expected={'solution.py','batch_io.py','config.py','retrieval.py','context.py','corrections.py','hybrid.py','hierarchy.py','checks.py','requirements.txt'}
             if len(names)!=len(expected) or set(names)!=expected:
                 raise ValueError('Unexpected or missing package entries')
             package.extractall(root)

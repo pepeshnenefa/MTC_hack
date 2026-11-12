@@ -52,7 +52,11 @@ DEFAULTS = {
     'USE_RERANKER': 0,
     'USE_CORRECTIONS': 0,      # corrections-v1: client's explicit corrections rewrite the search view
     # --- generation (solution.py) ---
-    'PROMPT': 'full',         # 'full' = context-v1 instruction, 'short' = prompt-v1, 'v2' = prompt-v1 with question/example edits, 'v3' = 'full' with form edits
+    'PROMPT': 'full',         # 'full' = context-v1 instruction, 'short' = prompt-v1, 'v2' = prompt-v1 with question/example edits, 'v3' = 'full' with form edits, 'v4' = 'full' plus four checks against critical errors
+    'NUMBER_CHECK': 0,         # 1 = add the arithmetic comparison of the client's quantities with document quantities (checks.py)
+    'NUMBER_CHECK_SCOPE': 'dialog',  # 'dialog' = latest client turn naming each quantity; 'last' = quantities of the last client turn only
+    'NUMBER_CHECK_VALUES': 3,  # nearest document values listed on each side of the client's quantity
+    'ASSISTANT_CHECK': 0,      # 1 = when the dialogue has assistant turns, remind to verify them against the documents
     'USE_EXAMPLES': 1,         # few-shot form examples inside the system prompt
     'USE_REMINDER': 1,         # form reminder after the documents
     'DIALOG_FORMAT': 'raw',    # 'raw' = dialogue as received; 'structured' = history and the last client turn separated

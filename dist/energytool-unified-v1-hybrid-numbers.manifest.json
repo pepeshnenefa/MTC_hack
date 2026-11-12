@@ -1,0 +1,21 @@
+{
+  "archive": "energytool-unified-v1-hybrid-numbers.zip",
+  "sha256": "4a9f45b8891992675ab7ac105f99e48bcebac22204e8efe9e7560fddb491180e",
+  "default_overrides": {
+    "USE_HYBRID": "1",
+    "W_COLLOQUIAL": "0.5",
+    "NUMBER_CHECK": "1"
+  },
+  "files": {
+    "solution.py": "b23ce22c888556eaeca4267ef6b2def74b54b72596a60691b65bde81b01083df",
+    "batch_io.py": "53b06555fc04de96e0f98acacde7cd581f9ce0666c01bb17213d57972d42efcb",
+    "config.py": "aff62cf2c4b943d573ad6518cd83854c3806475b5db939f5fdc8959c41ce8003",
+    "retrieval.py": "dce33d1471480c3b7469b4a77900f25d495f8d22bee4b84bd010118e226f7c28",
+    "context.py": "73c3d1c28e2619f70b39a11cb53842679e06f33111137c45fba30e516ad16cf7",
+    "corrections.py": "8e4435f37a894cf9eace5bf05c404185ef6e3dcfe6f6a66bbe349d6ae9f3306d",
+    "hybrid.py": "dc270254c0b2685e270cccf53789ef4654f4c4535fc627221ea65c08157aeefd",
+    "hierarchy.py": "cef54c0b3950a743e00522478ba701f1341841920b788780fe3cfa17de68fbf6",
+    "checks.py": "0e4b8647699296ca522705d3b9009cd402c4c66474d3ff4ea9951d9e94c30d01",
+    "requirements.txt": "780b07894d16bf730a7f4a55418a60ac89382510c02d1f9e004a6231700e5031"
+  }
+}

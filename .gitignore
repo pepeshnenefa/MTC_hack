@@ -19,3 +19,6 @@ submission.csv
 .pytest_cache/
 /.deps/
 /.local-backup-before-*/
+
+# macOS folder metadata.
+.DS_Store

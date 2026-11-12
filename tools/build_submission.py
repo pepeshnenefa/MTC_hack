@@ -6,7 +6,7 @@ from pathlib import Path
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FILES = ('solution.py', 'batch_io.py', 'config.py', 'retrieval.py', 'context.py', 'corrections.py', 'hybrid.py', 'hierarchy.py', 'requirements.txt')
+FILES = ('solution.py', 'batch_io.py', 'config.py', 'retrieval.py', 'context.py', 'corrections.py', 'hybrid.py', 'hierarchy.py', 'checks.py', 'requirements.txt')
 
 
 def with_defaults(source, overrides):

@@ -25,6 +25,7 @@ TRANSIENT=(OSError,HTTPException)
 import config
 from retrieval import tokens, query, chunks, Search, turns
 from context import pack_context
+import checks
 from hybrid import prepare as prepare_hybrid
 from hierarchy import HierarchicalSearch
 
@@ -124,19 +125,33 @@ SYSTEM_V3=SYSTEM_FULL.replace(
 )
 assert SYSTEM_V3.count('без списков и нумерации')==1 and SYSTEM_V3.count('по этому продукту')==1 and SYSTEM_V3.count('сначала подтверди')==1
 
+# v4 = the context-v1 instruction, unchanged, plus four checks aimed at the critical errors that
+# survived on the holdout with every needed section in the context (docs/checks-v1.md): a client's
+# number misread against a threshold, a price or property carried over from another product,
+# a previous assistant's mistake repeated, and an estimate promised where the documents have none.
+# Each check names the opposite case too, so that a correct "yes" is not turned into a refusal.
+CHECKS_V4='''ПЕРЕД ОТВЕТОМ ПРОВЕРЬ:
+1. Число клиента. Если вывод зависит от мощности, потребления или другого числа клиента, приведи его к единице порога из документов (1 МВт = 1000 кВт, 1 млн = 1000 тыс.) и сравни. Значение ниже нижней границы или выше верхней в диапазон НЕ входит: скажи это прямо и не рассчитывай для него цену или эффект. Если значение порог проходит — подтверди уверенно.
+2. Тот ли продукт. Цена, срок, гарантия или свойство относятся только к тому продукту и той конфигурации, для которых они указаны в документе. Если клиент спрашивает о другом продукте или варианте, не переноси их: скажи, что для его варианта таких данных нет, и поясни, к чему относится известная цифра. Если они указаны именно для его варианта — назови их.
+3. Слова ассистента. Реплики ассистента в диалоге написаны до тебя и могут быть ошибочны: сверь их с документами. Если они противоречат документам, начни с исправления («Нет, это было неточно: …»), дай верные сведения и не соглашайся с выводом клиента, построенным на ошибке. Если они верны — подтверди их; не называй неточным то, что совпадает с документами.
+4. Есть ли ответ. Если того, о чём спрашивает клиент, в документах нет (прогноз, цена неописанного варианта, услуги вне Energytool), скажи это первым предложением. Не обещай дать эти сведения позже и не проси данные «для точного ответа», если в документах не сказано, что такую оценку делают. Не называй сайты, отделы и контакты, которых нет в документах. Если ответ в документах есть — отвечай по существу, а не отказывай.'''
+SYSTEM_V4=SYSTEM_FULL+'\n\n'+CHECKS_V4
+
 def system_prompt():
     variant=config.get('PROMPT')
     if variant=='full':return SYSTEM_FULL
+    if variant=='v4':return SYSTEM_V4
     if variant=='v3':return SYSTEM_V3
     base,examples=(SYSTEM_V2,EXAMPLES_V2) if variant=='v2' else (SYSTEM,EXAMPLES)
     return base+('\n\n'+examples if config.get('USE_EXAMPLES') else '')
 
-def user_message(question,context):
-    """Documents first, then the dialogue; the last client turn is what must be answered."""
+def user_message(question,context,notes=''):
+    """Documents first, then the dialogue; the last client turn is what must be answered.
+    notes: deterministic checks (checks.py) placed right after the dialogue."""
     variant=config.get('PROMPT')
-    reminder=''
-    if config.get('USE_REMINDER') and variant not in ('full','v3'):
-        reminder='\n\n'+(REMINDER_V2 if variant=='v2' else REMINDER)
+    reminder='\n\n'+notes if notes else ''
+    if config.get('USE_REMINDER') and variant not in ('full','v3','v4'):
+        reminder+='\n\n'+(REMINDER_V2 if variant=='v2' else REMINDER)
     if config.get('DIALOG_FORMAT')!='structured':
         return 'ДОКУМЕНТЫ:\n'+context+'\n\nДИАЛОГ ИЛИ ВОПРОС:\n'+question+reminder
     parts=turns(question)
@@ -225,7 +240,11 @@ class API:
         if report['dropped']:
             print(json.dumps({'event':'context_budget','dropped':len(report['dropped']),
                               'included':len(report['included'])}),file=sys.stderr)
-        payload={'model':self.model,'temperature':self.temperature,'max_tokens':self.max_tokens,'messages':[{'role':'system','content':system_prompt()},{'role':'user','content':user_message(question,context)}]}
+        try:notes=checks.block(question,report['included'])
+        except Exception as exc:
+            # A check is an aid; its failure must never cost the answer.
+            notes='';print('Checks unavailable: '+type(exc).__name__,file=sys.stderr)
+        payload={'model':self.model,'temperature':self.temperature,'max_tokens':self.max_tokens,'messages':[{'role':'system','content':system_prompt()},{'role':'user','content':user_message(question,context,notes)}]}
         thinking=config.get('THINKING')
         if thinking in ('on','off') and not API.template_arguments_rejected:
             # Optional and unset by default: the proxy may not accept template arguments.
@@ -259,7 +278,7 @@ class API:
                 try:
                     with open(path,'a',encoding='utf-8') as stream:
                         stream.write(json.dumps({'question':question,'answer':text,'calls':calls[0],
-                            'seconds':round(time.monotonic()-started,1),'context_chars':len(context),
+                            'seconds':round(time.monotonic()-started,1),'context_chars':len(context),'notes':notes,
                             'sources':[s['source'].split('/')[-1]+' / '+s.get('title',s['heading'])+' ['+str(len(s['text']))+']' for s in report['included']]},ensure_ascii=False)+'\n')
                 except OSError:pass
             return text
