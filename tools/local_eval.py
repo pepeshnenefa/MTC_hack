@@ -24,6 +24,11 @@ SETS = {
     'demo': ROOT / 'demo_questions.csv',
     'decision': ROOT / 'tests/evaluation/decision-v1/questions.csv',
     'holdout': ROOT / 'tests/evaluation/holdout-v1/questions.csv',
+    'holdout2': ROOT / 'tests/evaluation/holdout-v2/questions.csv',
+    'holdout3': ROOT / 'tests/evaluation/holdout-v3/questions.csv',
+    'holdout4': ROOT / 'tests/evaluation/holdout-v4/questions.csv',
+    'grounded1': ROOT / 'tests/evaluation/grounded-holdout-v1/questions.csv',
+    'numreg': ROOT / 'tests/evaluation/numeric-regression-v1/questions.csv',
 }
 PASS_THROUGH = ('PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL')
 
@@ -45,6 +50,8 @@ def run(args):
         solution = target
     questions = SETS.get(args.set, Path(args.set)).resolve()
     label = args.set if args.set in SETS else Path(args.set).stem
+    if args.parts > 1:
+        return run_parts(args, out, solution, questions, label)
     answers = out / (label + '.csv')
     trace = out / (label + '.trace.jsonl')
     if trace.exists():
@@ -66,6 +73,47 @@ def run(args):
     summary = {'name': args.name, 'set': label, 'returncode': process.returncode, 'seconds': seconds,
                'model': args.model, 'overrides': args.env or [], 'stdout': process.stdout.strip()[-400:],
                'regenerations': sum('"regeneration"' in e for e in events)}
+    (out / (label + '.summary.json')).write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
+    print(json.dumps(summary, ensure_ascii=False))
+
+
+def run_parts(args, out, solution, questions, label):
+    """The local model is slow: a long set is run as several independent launches and merged.
+
+    Every launch is the unmodified entry point with its own run budget; rows are independent
+    test cases, so the merged file equals one launch on a faster server."""
+    rows = read_csv(questions)
+    size = -(-len(rows) // args.parts)
+    merged, traces, summaries = [], [], []
+    for index in range(args.parts):
+        part = rows[index * size:(index + 1) * size]
+        if not part:
+            continue
+        name = '%s.part%d' % (label, index + 1)
+        source = out / 'parts' / (name + '.csv')  # its stem names the answers file in the run directory
+        source.parent.mkdir(exist_ok=True)
+        with source.open('w', encoding='utf-8', newline='') as stream:
+            writer = csv.DictWriter(stream, ['id', 'question'])
+            writer.writeheader()
+            writer.writerows(part)
+        single = argparse.Namespace(**dict(vars(args), parts=1, set=str(source), solution=str(solution)))
+        run(single)
+        stem = source.stem
+        merged.extend(read_csv(out / (stem + '.csv')))
+        trace = out / (stem + '.trace.jsonl')
+        if trace.exists():
+            traces.append(trace.read_text(encoding='utf-8'))
+        summaries.append(json.loads((out / (stem + '.summary.json')).read_text(encoding='utf-8')))
+    if [r['id'] for r in merged] != [r['id'] for r in rows]:
+        raise SystemExit('Merged answers do not match the question ids')
+    with (out / (label + '.csv')).open('w', encoding='utf-8', newline='') as stream:
+        writer = csv.DictWriter(stream, ['id', 'answer'])
+        writer.writeheader()
+        writer.writerows(merged)
+    (out / (label + '.trace.jsonl')).write_text(''.join(traces), encoding='utf-8')
+    summary = {'name': args.name, 'set': label, 'parts': len(summaries),
+               'returncode': max(s['returncode'] for s in summaries), 'seconds': round(sum(s['seconds'] for s in summaries), 1),
+               'model': args.model, 'overrides': args.env or [], 'regenerations': sum(s['regenerations'] for s in summaries)}
     (out / (label + '.summary.json')).write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding='utf-8')
     print(json.dumps(summary, ensure_ascii=False))
 
@@ -132,6 +180,7 @@ if __name__ == '__main__':
     p.add_argument('--workers', type=int, default=1)
     p.add_argument('--max-tokens', type=int, default=700)
     p.add_argument('--env', action='append')
+    p.add_argument('--parts', type=int, default=1, help='split a long set into several launches and merge the answers')
     p.set_defaults(func=run)
     p = sub.add_parser('sample')
     p.add_argument('--name', default='sample-baseline')

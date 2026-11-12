@@ -88,11 +88,19 @@ def select_sources(question,sources,limit=12):
 def pack_context(question,sources,limit=12,max_chars=None):
     if max_chars is None:max_chars=int(config.get('CONTEXT_CHARS'))
     selected=select_sources(question,sources,limit)
+    grounded=bool(config.get('GROUNDED_CONTEXT'))
+    if grounded:
+        # Entity-aware context: sections of other products are capped, every section carries its product tag.
+        import grounding
+        registry=grounding.REGISTRY or grounding.Registry(sources)
+        active,_=grounding.focus(question,selected)
+        selected=grounding.arrange(selected,sources,active,int(config.get('OFF_PRODUCT_MAX')))
     # Guardrails are short and must not be the part that falls out of the budget.
     selected=sorted(selected,key=lambda s:0 if s.get('forced') else 1) if any(s.get('forced') for s in selected) else selected
     entries=[];included=[];dropped=[];used=0
+    if grounded:used=len(grounding.NOTE)+2
     for source in selected:
-        entry=source['source']+' / '+source.get('title',source['heading'])+'\n'+source['text']
+        entry=grounding.render([source],registry)[0] if grounded else source['source']+' / '+source.get('title',source['heading'])+'\n'+source['text']
         cost=len(entry)+(2 if entries else 0)
         if used+cost>max_chars:
             dropped.append(source);continue
@@ -100,4 +108,6 @@ def pack_context(question,sources,limit=12,max_chars=None):
     # Reading order for the model: direct evidence first, guardrails last (next to the question).
     order=[e for e in entries if not e[0].get('forced')]+[e for e in entries if e[0].get('forced')]
     included=[e[0] for e in order]
-    return '\n\n'.join(e[1] for e in order),{'selected':selected,'included':included,'dropped':dropped,'characters':used}
+    text='\n\n'.join(e[1] for e in order)
+    if grounded and text:text=grounding.NOTE+'\n\n'+text
+    return text,{'selected':selected,'included':included,'dropped':dropped,'characters':used}

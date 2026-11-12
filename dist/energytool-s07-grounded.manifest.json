@@ -1,0 +1,40 @@
+{
+  "archive": "energytool-s07-grounded.zip",
+  "base": "energytool-unified-v1-hybrid-semantic07.zip",
+  "base_sha256": "4d1b307e7a786c29d74824c453a3e21249841cbb04474e44e2e5c4bbe2579f8c",
+  "sha256": "569de29457e955c0690760dcf4078d4d0895a9c7d97b18574cbad46c6069493a",
+  "default_overrides": {
+    "PROMPT": "grounded",
+    "GROUNDED_CONTEXT": 1,
+    "GROUNDED_VALIDATE": 2,
+    "GROUNDED_RECHECK": 1
+  },
+  "inherited_from_base": {
+    "USE_HYBRID": 1,
+    "W_COLLOQUIAL": 0.5,
+    "M_DENSE_MISMATCH": 0.7
+  },
+  "build": "python3 tools/build_submission.py --set USE_HYBRID=1 --set W_COLLOQUIAL=0.5 --set M_DENSE_MISMATCH=0.7 --set PROMPT=grounded --set GROUNDED_CONTEXT=1 --set GROUNDED_VALIDATE=2 --set GROUNDED_RECHECK=1; sources of commit d242fdc, reproduced byte-for-byte 2026-11-12",
+  "files": {
+    "solution.py": "4ed978734694833277e37c611248056133b545b4e635262e9b30bb9826c8c2f8",
+    "batch_io.py": "53b06555fc04de96e0f98acacde7cd581f9ce0666c01bb17213d57972d42efcb",
+    "config.py": "2a4f9a9a5996f3c051a19a2fe29e19fcf7262b480ae9bac4b430c5e1d93f81d8",
+    "retrieval.py": "dce33d1471480c3b7469b4a77900f25d495f8d22bee4b84bd010118e226f7c28",
+    "context.py": "138748b52281714074ebc2cf8f762a3c718d4750e4ff188967ddfb945d5258b0",
+    "corrections.py": "8e4435f37a894cf9eace5bf05c404185ef6e3dcfe6f6a66bbe349d6ae9f3306d",
+    "hybrid.py": "dc270254c0b2685e270cccf53789ef4654f4c4535fc627221ea65c08157aeefd",
+    "hierarchy.py": "cef54c0b3950a743e00522478ba701f1341841920b788780fe3cfa17de68fbf6",
+    "checks.py": "c2d55c58e1fc5eecb7d41126090ac4e5615031aac3903025dee812536bccbfee",
+    "numeric_engine.py": "8af31e9bb33443369356c307c270e7ff8ce7520c5a5e41c72c57d68cadaa7fed",
+    "grounding.py": "482eb83c5622c984bdf6483abcfda7deb580b912fe43d543f3a3a6340b7e5902",
+    "requirements.txt": "780b07894d16bf730a7f4a55418a60ac89382510c02d1f9e004a6231700e5031"
+  },
+  "checks": {
+    "unit_tests": "234 passed",
+    "check_submission": "18 rows, 0 failed (offline responder)",
+    "mock_platform_run": "18 rows, 0 service-line leaks, 30 chat calls / 18 questions, max 2 per question"
+  },
+  "status": "prepared_not_submitted",
+  "score": null,
+  "doc": "docs/s07-grounded.md"
+}

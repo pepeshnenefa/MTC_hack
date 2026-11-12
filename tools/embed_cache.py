@@ -1,6 +1,6 @@
 """Compute bge-m3 vectors through the submission code path and cache them for offline tuning.
 
-    LLM_BASE_URL=http://127.0.0.1:8089/v1 python3 tools/embed_cache.py [--holdout]
+    LLM_BASE_URL=http://127.0.0.1:8089/v1 python3 tools/embed_cache.py [--holdout] [--questions FILE.csv ...]
 
 The cache lives in work/ (ignored by Git, never packaged): the platform recomputes vectors at run time.
 """
@@ -36,6 +36,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--holdout', action='store_true')
     parser.add_argument('--model', default='baai/bge-m3')
+    parser.add_argument('--questions', nargs='*', default=[], help='extra question CSV files (id,question), e.g. holdout-v2')
     args = parser.parse_args()
     cache = load()
     items = T.chunks(T.documents())
@@ -44,6 +45,10 @@ def main():
     if args.holdout:  # every holdout question, including those without labelled sources
         import csv
         with (ROOT / 'tests/evaluation/holdout-v1/questions.csv').open(encoding='utf-8-sig') as stream:
+            texts += [query(row['question']) for row in csv.DictReader(stream)]
+    for path in args.questions:
+        import csv
+        with Path(path).open(encoding='utf-8-sig') as stream:
             texts += [query(row['question']) for row in csv.DictReader(stream)]
     missing = [t for t in dict.fromkeys(texts) if digest(t) not in cache]
     api = solution.API()

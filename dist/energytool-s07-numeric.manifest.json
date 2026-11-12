@@ -1,0 +1,38 @@
+{
+  "archive": "energytool-s07-numeric.zip",
+  "base_archive": "energytool-unified-v1-hybrid-semantic07.zip",
+  "base_sha256": "4d1b307e7a786c29d74824c453a3e21249841cbb04474e44e2e5c4bbe2579f8c",
+  "sha256": "7dadd2ca39a8702941cb6097957576b6befd6743b23789632ae29fa4138a2c28",
+  "default_overrides": {
+    "USE_HYBRID": "1",
+    "W_COLLOQUIAL": "0.5",
+    "M_DENSE_MISMATCH": "0.7",
+    "NUMERIC_ENGINE": "1"
+  },
+  "files": {
+    "solution.py": "4ed978734694833277e37c611248056133b545b4e635262e9b30bb9826c8c2f8",
+    "batch_io.py": "53b06555fc04de96e0f98acacde7cd581f9ce0666c01bb17213d57972d42efcb",
+    "config.py": "e4fd9fb6a30420d96f03b321bc7bdc22f09370318dcbed7a17931b8349635bcb",
+    "retrieval.py": "dce33d1471480c3b7469b4a77900f25d495f8d22bee4b84bd010118e226f7c28",
+    "context.py": "138748b52281714074ebc2cf8f762a3c718d4750e4ff188967ddfb945d5258b0",
+    "corrections.py": "8e4435f37a894cf9eace5bf05c404185ef6e3dcfe6f6a66bbe349d6ae9f3306d",
+    "hybrid.py": "dc270254c0b2685e270cccf53789ef4654f4c4535fc627221ea65c08157aeefd",
+    "hierarchy.py": "cef54c0b3950a743e00522478ba701f1341841920b788780fe3cfa17de68fbf6",
+    "checks.py": "c2d55c58e1fc5eecb7d41126090ac4e5615031aac3903025dee812536bccbfee",
+    "numeric_engine.py": "bf4a6d1e9a3ab73b3e00a5646a55851ca227f84996ba6f4498f09a696cd6f508",
+    "grounding.py": "482eb83c5622c984bdf6483abcfda7deb580b912fe43d543f3a3a6340b7e5902",
+    "requirements.txt": "780b07894d16bf730a7f4a55418a60ac89382510c02d1f9e004a6231700e5031"
+  },
+  "built_from": "submission/ on branch prompt-v1, working tree 2026-11-12 20:00 (numeric_engine.py uncommitted at build time)",
+  "build_command": "python3 -B tools/build_submission.py --output dist/energytool-s07-numeric.zip --set USE_HYBRID=1 --set W_COLLOQUIAL=0.5 --set M_DENSE_MISMATCH=0.7 --set NUMERIC_ENGINE=1",
+  "checks": {
+    "unit_tests": "234 passed",
+    "offline_format_check": "18 rows, 0 failed",
+    "fake_api_path_check": "18 rows, 0 failed; engine extraction 2/18; malformed extraction reply -> 18 rows, 0 failed",
+    "rebuild_reproducible": true,
+    "local_stand_generation": "not run with this engine version",
+    "real_model_quality_evaluated": false
+  },
+  "status": "prepared_not_submitted",
+  "score": null
+}

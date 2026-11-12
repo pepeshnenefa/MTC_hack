@@ -19,8 +19,9 @@ def check(archive, questions, kb, output):
         root=Path(temp)
         with zipfile.ZipFile(archive) as package:
             names=package.namelist()
-            expected={'solution.py','batch_io.py','config.py','retrieval.py','context.py','corrections.py','hybrid.py','hierarchy.py','requirements.txt'}
-            if len(names)!=len(expected) or set(names)!=expected:
+            expected={'solution.py','batch_io.py','config.py','retrieval.py','context.py','corrections.py','hybrid.py','hierarchy.py','checks.py','requirements.txt'}
+            optional={'numeric_engine.py','grounding.py'}  # absent from archives built before the numeric engine
+            if len(names)!=len(set(names)) or set(names)-optional!=expected:
                 raise ValueError('Unexpected or missing package entries')
             package.extractall(root)
         data=root/'data';data.mkdir()
