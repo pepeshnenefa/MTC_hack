@@ -58,6 +58,8 @@
 | energytool-unified-v1-hybrid-semantic05.zip | 55.82 | 12:12 | 295.9 с | Успешно |
 | energytool-unified-v1-hybrid-grouped-v1.zip | 50.571 | 22:12 | 302.3 с | Успешно |
 | energytool-s07-grounded-numeric.zip | 44.625 | 20:21 | 694.6 с | Успешно |
+| energytool-s07-chunk-paragraph.zip | 54.944 | 22:29 | 345.3 с | Успешно |
+| energytool-s07-chunk-semantic.zip | 50.903 | 22:40 | 306.3 с | Успешно |
 
 Времена — поля интерфейса, не собственные измерения генерации. Что входит в длительность, неизвестно. Гибрид против context: -3.680 пункта/+183.0 с. Anchored против context: -1.838 пункта/+47.9 с. Anchored против hybrid: +1.842 пункта/-135.1 с. Не переводить эти разницы в доли исправленных вопросов: формула оценки нелинейно включает Match Rate/Win Rate.
 

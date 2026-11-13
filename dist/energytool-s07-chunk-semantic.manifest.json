@@ -1,0 +1,20 @@
+{
+  "archive": "energytool-s07-chunk-semantic.zip",
+  "base_sha256": "4d1b307e7a786c29d74824c453a3e21249841cbb04474e44e2e5c4bbe2579f8c",
+  "sha256": "7dedd7cbb454c57594dcc061671a26054c8443be070709b69128e33682c014ec",
+  "default_overrides": {
+    "CHUNK_MODE": "semantic"
+  },
+  "files": {
+    "solution.py": "6f01d8f1a4d0ed249f8eb12931e6248fed72e5637b1fed8eb09d7a96074434cb",
+    "batch_io.py": "53b06555fc04de96e0f98acacde7cd581f9ce0666c01bb17213d57972d42efcb",
+    "config.py": "2b2ce89a0e43516daaaa0bfaf715f97eb6fa9ea34390cd68734d60e4181dd674",
+    "retrieval.py": "62041dac3fa6eee1267ccf2899487d4b91e1d2f7ec941f5ff829182051350a81",
+    "context.py": "73c3d1c28e2619f70b39a11cb53842679e06f33111137c45fba30e516ad16cf7",
+    "corrections.py": "8e4435f37a894cf9eace5bf05c404185ef6e3dcfe6f6a66bbe349d6ae9f3306d",
+    "hybrid.py": "dc270254c0b2685e270cccf53789ef4654f4c4535fc627221ea65c08157aeefd",
+    "hierarchy.py": "cef54c0b3950a743e00522478ba701f1341841920b788780fe3cfa17de68fbf6",
+    "requirements.txt": "780b07894d16bf730a7f4a55418a60ac89382510c02d1f9e004a6231700e5031",
+    "chunking.py": "6d4e7b9c2ff5a00e506ce00ed02d1a074a08219c10989845ef6d73ca0d36777e"
+  }
+}
